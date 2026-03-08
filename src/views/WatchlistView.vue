@@ -454,8 +454,8 @@ function getDisplayChangeRate(item) {
     return parseFloat(((item.confirmedNav - item.prevNav) / item.prevNav * 100).toFixed(4))
   }
   if (isLiveEstimate(item)) {
-    if (item.gszzl !== null && item.gszzl !== undefined && !isNaN(item.gszzl)) return item.gszzl
-    if (item.gsz != null && item.prevNav) {
+    if (item.gszzl && !isNaN(item.gszzl)) return item.gszzl
+    if (item.gsz != null && item.prevNav && item.prevNav > 0) {
       return parseFloat(((item.gsz - item.prevNav) / item.prevNav * 100).toFixed(4))
     }
   }

@@ -102,8 +102,14 @@ export const useFundStore = defineStore('fund', () => {
           const gszNum = parseFloat(data.gsz)
           if (data.gsz && gszNum > 0) {
             f.gsz = gszNum
-            f.gszzl = data.gszzl !== undefined ? parseFloat(data.gszzl) : null
             if (data.gztime) f.gztime = data.gztime
+            // API gszzl 可能返回 0（未刷新默认值），优先用 gsz/prevNav 自算
+            const rawGszzl = parseFloat(data.gszzl)
+            if (rawGszzl && !isNaN(rawGszzl)) {
+              f.gszzl = rawGszzl
+            } else if (f.prevNav && f.prevNav > 0) {
+              f.gszzl = parseFloat(((gszNum - f.prevNav) / f.prevNav * 100).toFixed(4))
+            }
           }
         }
 

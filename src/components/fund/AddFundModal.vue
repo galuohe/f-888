@@ -107,7 +107,7 @@ import BaseModal from '@/components/common/BaseModal.vue'
 import { useFundStore } from '@/stores/fundStore'
 import { useWatchStore } from '@/stores/watchStore'
 import { searchFunds, fetchOne } from '@/services/fundApi'
-import { fmt } from '@/utils/format'
+import { fmt, getTodayStr } from '@/utils/format'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -165,8 +165,7 @@ function reset() {
     step.value = 2
     // 异步获取最新净值
     fetchOne(props.prefill.code).then(data => {
-      const gszNum = parseFloat(data.gsz)
-      const nav = (gszNum > 0) ? gszNum : (data.dwjz ? parseFloat(data.dwjz) : null)
+      const nav = resolveNav(data)
       latestNav.value = nav ? fmt(nav, 4) : null
       if (nav && !iCostNav.value) iCostNav.value = nav
     }).catch(() => {})
@@ -175,6 +174,15 @@ function reset() {
     selected.value = null
     nextTick(() => searchInput.value?.focus())
   }
+}
+
+/** 净值优先级：今日确认净值 > 今日估值 > 上次确认净值 */
+function resolveNav(data) {
+  const dwjz = data.dwjz ? parseFloat(data.dwjz) : null
+  const gsz  = data.gsz  ? parseFloat(data.gsz)  : null
+  if (data.jzrq === getTodayStr() && dwjz) return dwjz  // 今日已出确认净值
+  if (gsz && gsz > 0) return gsz                         // 今日估值
+  return dwjz                                             // 上次确认净值
 }
 
 // ── 搜索 ──
@@ -203,8 +211,7 @@ async function goStep2() {
   latestNav.value = null
   try {
     const data = await fetchOne(selected.value.CODE)
-    const gszNum = parseFloat(data.gsz)
-    const nav = (gszNum > 0) ? gszNum : (data.dwjz ? parseFloat(data.dwjz) : null)
+    const nav = resolveNav(data)
     latestNav.value = nav ? fmt(nav, 4) : null
     if (nav && !iCostNav.value) iCostNav.value = nav
   } catch { /* 静默，允许手动输入 */ }
