@@ -8,13 +8,6 @@
           <div class="summary-value neutral" :class="{ masked: hiddenCols.amount }">
             ¥{{ fmt(fundStore.summary.totalAmount, 2) }}
           </div>
-          <div
-            v-if="fundStore.summary.totalAccumRate != null"
-            class="summary-sub"
-            :class="profitClass(fundStore.summary.totalAccumRate)"
-          >
-            {{ fundStore.summary.totalAccumRate >= 0 ? '+' : '' }}{{ fmt(fundStore.summary.totalAccumRate, 2) }}%
-          </div>
         </div>
         <div class="summary-item">
           <div class="summary-label">今日总盈亏（元）</div>
@@ -47,6 +40,13 @@
             :class="[profitClass(fundStore.summary.totalAccum), { masked: hiddenCols.accum }]"
           >
             {{ fundStore.summary.totalAccum >= 0 ? '+¥' : '-¥' }}{{ fmt(Math.abs(fundStore.summary.totalAccum), 2) }}
+          </div>
+          <div
+            v-if="fundStore.summary.totalAccumRate != null"
+            class="summary-sub"
+            :class="profitClass(fundStore.summary.totalAccumRate)"
+          >
+            {{ fundStore.summary.totalAccumRate >= 0 ? '+' : '' }}{{ fmt(fundStore.summary.totalAccumRate, 2) }}%
           </div>
         </div>
       </div>

@@ -98,9 +98,13 @@ export const useFundStore = defineStore('fund', () => {
 
         const alreadyConfirmedToday = f.confirmedDate === todayStr
         if (!alreadyConfirmedToday) {
-          if (data.gsz) f.gsz = parseFloat(data.gsz)
-          if (data.gszzl !== undefined) f.gszzl = parseFloat(data.gszzl)
-          if (data.gztime) f.gztime = data.gztime
+          // gsz/gszzl/gztime 三者绑定更新：gsz 为 0 说明无实时估值，不写入避免涨跌幅显示 0
+          const gszNum = parseFloat(data.gsz)
+          if (data.gsz && gszNum > 0) {
+            f.gsz = gszNum
+            f.gszzl = data.gszzl !== undefined ? parseFloat(data.gszzl) : null
+            if (data.gztime) f.gztime = data.gztime
+          }
         }
 
         const nowH = new Date().getHours()
