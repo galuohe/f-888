@@ -410,6 +410,10 @@ tbody td {
 .summary-value { font-size: 24px; font-weight: 700; line-height: 1.2; color: #fff; position: relative; }
 .summary-value.profit { color: var(--profit); }
 .summary-value.loss   { color: var(--loss); }
+.summary-sub { font-size: 13px; font-weight: 500; margin-top: 4px; }
+.summary-sub.profit { color: var(--profit); }
+.summary-sub.loss   { color: var(--loss); }
+.summary-sub.neutral { color: var(--text-muted); }
 
 /* ── Spinner ── */
 .spinner {

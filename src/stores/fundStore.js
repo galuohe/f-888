@@ -339,7 +339,7 @@ export const useFundStore = defineStore('fund', () => {
   const summary = computed(() => {
     if (funds.value.length === 0) return null
     const todayStr = getTodayStr()
-    let totalAmount = 0, todayProfitSum = 0, yesterdayValue = 0, totalAccum = 0
+    let totalAmount = 0, todayProfitSum = 0, yesterdayValue = 0, totalAccum = 0, totalCost = 0
     let hasLive = false
 
     funds.value.forEach(f => {
@@ -364,12 +364,14 @@ export const useFundStore = defineStore('fund', () => {
         ? f.holdingShares : (f.amount / (costBasisNav || costNav))
       if (navForAccum !== null && !isNaN(navForAccum) && costBasisNav) {
         totalAccum += accumShares * (navForAccum - costBasisNav)
+        totalCost += accumShares * costBasisNav
       }
     })
 
     const change = yesterdayValue > 0 ? (todayProfitSum / yesterdayValue) * 100 : 0
+    const totalAccumRate = totalCost > 0 ? (totalAccum / totalCost) * 100 : null
 
-    return { totalAmount, todayProfit: todayProfitSum, change, totalAccum, hasLive }
+    return { totalAmount, todayProfit: todayProfitSum, change, totalAccum, totalAccumRate, hasLive }
   })
 
   return {
