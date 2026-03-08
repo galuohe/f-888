@@ -4,7 +4,7 @@ import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
   plugins: [vue()],
-  base: '/',
+  base: '/f-888',
   server: {
     proxy: {
       '/api-market': {
