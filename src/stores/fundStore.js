@@ -168,10 +168,12 @@ export const useFundStore = defineStore('fund', () => {
       const weekend2 = [0, 6].includes(new Date().getDay())
       // f.jzrq 在 try 块内已由 data.jzrq 赋值，可安全使用
       const apiJzrq = f.jzrq || ''
+      const prevNavBad = !f.prevNav || (f.confirmedNav && f.prevNav === f.confirmedNav)
       const needFetch = !f.error && (
         !f.confirmedNav ||
         (f.confirmedDate !== todayStr2 && (weekend2 || nowH2 >= 15)) ||
-        (apiJzrq && apiJzrq > (f.confirmedDate || ''))
+        (apiJzrq && apiJzrq > (f.confirmedDate || '')) ||
+        prevNavBad
       )
       if (needFetch) {
         try {
