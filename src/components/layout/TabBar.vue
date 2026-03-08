@@ -18,7 +18,7 @@ defineEmits(['switch'])
 
 const tabs = [
   { id: 1, label: '我的持仓' },
-  { id: 2, label: '自选' },
+  { id: 2, label: '自选监控' },
   { id: 3, label: '盈亏日历' },
   { id: 4, label: '基金大盘' },
   { id: 5, label: '板块行情' },

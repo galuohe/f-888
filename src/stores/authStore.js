@@ -45,16 +45,28 @@ export const useAuthStore = defineStore('auth', () => {
     if (!client.value || !user.value) return null
     isSyncing.value = true
     try {
-      const query = client.value
-        .from('user_data')
-        .select('funds, watchlist, watch_groups, pnl_history, ai_key')
-        .eq('user_id', user.value.id)
-        .maybeSingle()
       const timeout = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('请求超时')), 20000)
       )
-      const { data, error } = await Promise.race([query, timeout])
-
+      let { data, error } = await Promise.race([
+        client.value
+          .from('user_data')
+          .select('funds, watchlist, watch_groups, pnl_history, ai_key')
+          .eq('user_id', user.value.id)
+          .maybeSingle(),
+        timeout
+      ])
+      // watch_groups 列尚未建立时，降级查询（不影响其他数据）
+      if (error && error.code === '42703') {
+        console.warn('watch_groups 列不存在，降级查询')
+        const res2 = await client.value
+          .from('user_data')
+          .select('funds, watchlist, pnl_history, ai_key')
+          .eq('user_id', user.value.id)
+          .maybeSingle()
+        data = res2.data
+        error = res2.error
+      }
       if (error) throw error
       if (!data) {
         // 新账户：清空本地
