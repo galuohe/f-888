@@ -66,7 +66,7 @@ import { ref, computed, watch } from 'vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import { useFundStore } from '@/stores/fundStore'
 import { fetchOne } from '@/services/fundApi'
-import { fmt } from '@/utils/format'
+import { fmt, getTodayStr } from '@/utils/format'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -107,11 +107,15 @@ async function init() {
   const principal = (f.holdingShares > 0 && f.costBasis) ? f.holdingShares * f.costBasis : null
   iProfit.value = (principal && f.amount) ? parseFloat((f.amount - principal).toFixed(2)) : null
 
-  // 异步获取最新净值
+  // 异步获取最新净值（今日确认净值 > 今日估值 > 上次确认净值）
   latestNav.value = null
   try {
     const data = await fetchOne(f.code)
-    const nav = data.dwjz ? parseFloat(data.dwjz) : null
+    const dwjz = data.dwjz ? parseFloat(data.dwjz) : null
+    const gsz  = data.gsz  ? parseFloat(data.gsz)  : null
+    const nav  = (data.jzrq === getTodayStr() && dwjz) ? dwjz
+               : (gsz && gsz > 0) ? gsz
+               : dwjz
     latestNav.value = nav ? fmt(nav, 4) : null
     if (nav && !iCostNav.value) iCostNav.value = nav
   } catch { /* 静默 */ }
