@@ -165,7 +165,8 @@ function reset() {
     step.value = 2
     // 异步获取最新净值
     fetchOne(props.prefill.code).then(data => {
-      const nav = data.dwjz ? parseFloat(data.dwjz) : null
+      const gszNum = parseFloat(data.gsz)
+      const nav = (gszNum > 0) ? gszNum : (data.dwjz ? parseFloat(data.dwjz) : null)
       latestNav.value = nav ? fmt(nav, 4) : null
       if (nav && !iCostNav.value) iCostNav.value = nav
     }).catch(() => {})
@@ -202,7 +203,8 @@ async function goStep2() {
   latestNav.value = null
   try {
     const data = await fetchOne(selected.value.CODE)
-    const nav = data.dwjz ? parseFloat(data.dwjz) : null
+    const gszNum = parseFloat(data.gsz)
+    const nav = (gszNum > 0) ? gszNum : (data.dwjz ? parseFloat(data.dwjz) : null)
     latestNav.value = nav ? fmt(nav, 4) : null
     if (nav && !iCostNav.value) iCostNav.value = nav
   } catch { /* 静默，允许手动输入 */ }
