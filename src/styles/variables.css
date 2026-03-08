@@ -1,0 +1,18 @@
+:root {
+  --bg-primary:   #0d0f1a;
+  --bg-secondary: #141628;
+  --bg-card:      #181b2e;
+  --bg-input:     #1e2138;
+  --border:       #272b48;
+  --border-light: #303560;
+  --text-primary:   #e6e8f4;
+  --text-secondary: #8b90b8;
+  --text-muted:     #4e527a;
+  --accent:       #5571f5;
+  --accent-glow:  rgba(85, 113, 245, 0.35);
+  --profit:       #f04040;
+  --profit-bg:    rgba(240, 64, 64, 0.10);
+  --loss:         #22c45e;
+  --loss-bg:      rgba(34, 196, 94, 0.10);
+  --neutral:      #8b90b8;
+}
