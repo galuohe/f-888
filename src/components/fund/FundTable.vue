@@ -384,8 +384,9 @@ function getChangeRate(f) {
     return parseFloat(((f.confirmedNav - f.prevNav) / f.prevNav * 100).toFixed(4))
   }
   if (isLiveEstimate(f)) {
-    if (f.gszzl !== null && f.gszzl !== undefined && !isNaN(f.gszzl)) return f.gszzl
-    if (f.gsz != null && f.prevNav) {
+    // gszzl=0 时 API 可能是未刷新的默认值，优先用 gsz/prevNav 自算
+    if (f.gszzl && !isNaN(f.gszzl)) return f.gszzl
+    if (f.gsz != null && f.prevNav && f.prevNav > 0) {
       return parseFloat(((f.gsz - f.prevNav) / f.prevNav * 100).toFixed(4))
     }
   }
