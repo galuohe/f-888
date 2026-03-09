@@ -68,10 +68,19 @@ export function getMarketBadge(confirmedCount, totalCount) {
 }
 
 /**
+ * 判断当前是否在盘中交易时间（周一~五 09:30-15:00）
+ */
+export function isTradingHours() {
+  const d = new Date()
+  if (d.getDay() === 0 || d.getDay() === 6) return false
+  const mins = d.getHours() * 60 + d.getMinutes()
+  return mins >= 9 * 60 + 30 && mins < 15 * 60
+}
+
+/**
  * 计算自动刷新间隔（毫秒）
- * 盘中 60 秒，收盘后 5 分钟
+ * 盘中 60 秒，其余时间返回 null 表示不刷新
  */
 export function getAutoRefreshInterval() {
-  const now = new Date()
-  return now.getHours() >= 15 ? 300000 : 60000
+  return isTradingHours() ? 60000 : null
 }

@@ -300,8 +300,31 @@ function isInWatch(code) {
 }
 
 function addToWatch(fund) {
-  const added = watchStore.addWatch({ code: fund.code, tag: fund.sector || null })
-  if (added && window.$toast) window.$toast(`已添加监控：${fund.name}`, 'success')
+  const added = watchStore.addWatch({ code: fund.code, name: fund.name || fund.code, tags: fund.sector ? [fund.sector] : [] })
+  if (!added) return
+
+  // 立即用板块行情页已有的数据预填充，避免用户跳转到自选页看到空数据
+  const navNum = parseFloat(fund.nav)
+  const retNum = (fund.ret != null && !isNaN(fund.ret)) ? parseFloat(fund.ret) : null
+  if (!isNaN(navNum) && navNum > 0) {
+    const patch = {}
+    if (fund.confirmed === true) {
+      patch.confirmedNav = navNum; patch.navConfirmed = true; patch.confirmedDate = fund.jzrq; patch.gsz = navNum
+    } else if (fund.isEstimate) {
+      patch.gsz = navNum; patch.gztime = fund.jzrq + ' 00:00:00'
+    } else {
+      patch.confirmedNav = navNum; patch.confirmedDate = fund.jzrq
+    }
+    if (retNum !== null) {
+      patch.gszzl = retNum
+      patch.prevNav = parseFloat((navNum / (1 + retNum / 100)).toFixed(4))
+    }
+    watchStore.updateWatch(fund.code, patch)
+    watchStore.save()
+  }
+
+  window.$toast?.(`已添加监控：${fund.name}`, 'success')
+  fundStore.refreshAll(watchStore)
 }
 
 function quickSuggestClass(fund, row) {

@@ -261,12 +261,19 @@ function dateHint(item) {
 
 function estBadgeHtml(item) {
   const todayStr = getTodayStr()
-  const isHistorical = item.confirmed === null && item.jzrq && item.jzrq !== todayStr
-  const preMarket    = item.confirmed === false && isPreMarketNow()
-  if (preMarket)                  return ' <span class="premkt-badge">盘前休市</span>'
-  if (item.confirmed === false)   return ' <span class="est-badge">盘中估值</span>'
-  if (item.confirmed === true)    return ' <span class="conf-badge">✓ 已出净值</span>'
-  if (isHistorical)               return ' <span class="hist-badge">历史净值</span>'
+  if (item.confirmed === true)  return ' <span class="conf-badge">✓ 已出净值</span>'
+  if (item.confirmed === false) {
+    // 有今日估值（gsz）：显示估值状态
+    if (item.isEstimate) {
+      return isPreMarketNow()
+        ? ' <span class="premkt-badge">盘前休市</span>'
+        : ' <span class="est-badge">盘中估值</span>'
+    }
+    // 无当日估值（历史确认净值）：不显示彩色徽章，与持仓/自选一致
+    return ''
+  }
+  // confirmed === null：非交易日历史净值
+  if (item.jzrq && item.jzrq !== todayStr) return ' <span class="hist-badge">历史净值</span>'
   return ''
 }
 
@@ -279,8 +286,31 @@ function isInWatch(code) {
 }
 
 function addToWatch(item) {
-  const added = watchStore.addWatch({ code: item.code, tag: item.sector || null })
-  if (added && window.$toast) window.$toast(`已添加监控：${item.name}`, 'success')
+  const added = watchStore.addWatch({ code: item.code, name: item.name || item.code, tags: item.sector ? [item.sector] : [] })
+  if (!added) return
+
+  // 立即用大盘行情页已有的数据预填充，避免用户跳转到自选页看到空数据
+  const navNum = parseFloat(item.nav)
+  const retNum = (item.ret != null && !isNaN(item.ret)) ? parseFloat(item.ret) : null
+  if (!isNaN(navNum) && navNum > 0) {
+    const patch = {}
+    if (item.confirmed === true) {
+      patch.confirmedNav = navNum; patch.navConfirmed = true; patch.confirmedDate = item.jzrq; patch.gsz = navNum
+    } else if (item.isEstimate) {
+      patch.gsz = navNum; patch.gztime = item.jzrq + ' 00:00:00'
+    } else {
+      patch.confirmedNav = navNum; patch.confirmedDate = item.jzrq
+    }
+    if (retNum !== null) {
+      patch.gszzl = retNum
+      patch.prevNav = parseFloat((navNum / (1 + retNum / 100)).toFixed(4))
+    }
+    watchStore.updateWatch(item.code, patch)
+    watchStore.save()
+  }
+
+  window.$toast?.(`已添加监控：${item.name}`, 'success')
+  fundStore.refreshAll(watchStore)
 }
 
 // Quick suggest class (sync, no history data needed)

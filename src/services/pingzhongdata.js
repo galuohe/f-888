@@ -6,17 +6,38 @@
 
 let _pzdSeq = 0
 
+/** 内存缓存：code → { data, name, ts } */
+const _pzdCache = new Map()
+const CACHE_TTL = 5 * 60 * 1000  // 5 分钟
+
+/**
+ * 串行队列：保证同一时刻只有一个 pingzhongdata script 在执行，
+ * 避免多个 script 并发写 window.Data_netWorthTrend 互相覆盖。
+ */
+let _pzdQueue = Promise.resolve()
+
 /**
  * 获取基金净值历史趋势（Data_netWorthTrend）
  * @param {string} code - 6 位基金代码
- * @returns {Promise<Array>} - [{ x: timestamp_ms, y: nav, equityReturn: '...' }]
+ * @returns {Promise<{ data: Array, name: string|null }>}
  */
 export function fetchPingzhongdata(code) {
+  // 命中缓存则立即返回
+  const cached = _pzdCache.get(code)
+  if (cached && Date.now() - cached.ts < CACHE_TTL) {
+    return Promise.resolve({ data: cached.data, name: cached.name })
+  }
+
+  // 将实际请求追加到串行队列末尾
+  const req = _pzdQueue.then(() => _doFetch(code))
+  // 让队列继续推进，即使本次请求失败也不阻断后续请求
+  _pzdQueue = req.catch(() => {})
+  return req
+}
+
+function _doFetch(code) {
   return new Promise((resolve, reject) => {
     const scriptId = '_pzd_' + code + '_' + (++_pzdSeq)
-
-    const existing = document.getElementById(scriptId)
-    if (existing) existing.remove()
 
     let settled = false
     const tid = setTimeout(() => {
@@ -32,10 +53,6 @@ export function fetchPingzhongdata(code) {
       if (s) s.remove()
     }
 
-    // 清理上次残留的全局变量（用赋值而非 delete，因为 var 声明的全局属性
-    // configurable=false，在 ES Module 严格模式下 delete 会抛 TypeError）
-    window.Data_netWorthTrend = undefined
-
     const script = document.createElement('script')
     script.id = scriptId
     script.src = 'https://fund.eastmoney.com/pingzhongdata/' + code + '.js?v=' + Date.now()
@@ -43,9 +60,11 @@ export function fetchPingzhongdata(code) {
       if (settled) return
       settled = true
       cleanup()
-      const result = window.Data_netWorthTrend || []
+      const data = window.Data_netWorthTrend || []
       const name = window.fS_name || null
-      resolve({ data: result, name })
+      // 写入缓存
+      _pzdCache.set(code, { data, name, ts: Date.now() })
+      resolve({ data, name })
     }
     script.onerror = function () {
       if (settled) return
