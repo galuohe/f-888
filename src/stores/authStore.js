@@ -109,6 +109,13 @@ export const useAuthStore = defineStore('auth', () => {
           if (!Array.isArray(f.tags)) { f.tags = f.tag ? [f.tag] : [] }
           delete f.tag
         })
+        // 合并本地新增但云端尚未同步的持仓（防止刷新时云端旧数据覆盖本地新增）
+        try {
+          const localFunds = JSON.parse(localStorage.getItem(KEYS.FUNDS) || '[]')
+          const cloudCodes = new Set(funds.map(f => f.code))
+          const localOnly = localFunds.filter(f => !cloudCodes.has(f.code))
+          if (localOnly.length > 0) { funds.push(...localOnly); _cache.funds = funds }
+        } catch (_) {}
         localStorage.setItem(KEYS.FUNDS, JSON.stringify(funds))
       }
       if (data.watchlist) {
@@ -124,6 +131,13 @@ export const useAuthStore = defineStore('auth', () => {
           // 分组归属（与标签完全独立）
           if (!Array.isArray(w.groups)) { w.groups = [] }
         })
+        // 合并本地新增但云端尚未同步的自选（防止刷新时云端旧数据覆盖本地新增）
+        try {
+          const localWl = JSON.parse(localStorage.getItem(KEYS.WATCHLIST) || '[]')
+          const cloudCodes = new Set(wl.map(w => w.code))
+          const localOnly = localWl.filter(w => !cloudCodes.has(w.code))
+          if (localOnly.length > 0) { wl.push(...localOnly); _cache.watchlist = wl }
+        } catch (_) {}
         localStorage.setItem(KEYS.WATCHLIST, JSON.stringify(wl))
       }
       if (data.watch_groups) {

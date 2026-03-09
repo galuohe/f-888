@@ -569,7 +569,8 @@ function onTrendWheel(e) {
   rangeLeftPct.value = Math.max(0, center - newRange / 2)
   rangeRightPct.value = Math.min(100, center + newRange / 2)
 
-  isRangeMode.value = true
+  // 只有区间开关打开时才激活区间收益计算
+  if (rangeEnabled.value) isRangeMode.value = true
   updateRangeMarkers()
 }
 
@@ -614,16 +615,7 @@ const currentProfitRate = computed(() => {
   if (startNav == null || endNav == null || isNaN(startNav) || isNaN(endNav)) return null
 
   try {
-    // 非区间模式时，优先使用成本净值计算持有收益率
-    if (!isRangeMode.value) {
-      const costNavVal = props.item.costBasis ?? props.item.costNav
-      if (costNavVal && costNavVal > 0) {
-        const rate = ((endNav - costNavVal) / costNavVal) * 100
-        if (isFinite(rate)) return rate
-      }
-    }
-
-    // 使用区间起止点计算区间涨跌
+    // 使用所选时间段的起止净值计算期间涨跌（tab 切换会重置 _trendCache，因此 startNav 随 tab 变化）
     if (startNav !== 0) {
       const rate = ((endNav - startNav) / startNav) * 100
       if (isFinite(rate)) return rate
@@ -1167,6 +1159,7 @@ function addRangeMarkers(opts) {
 
 function onTrendChartClick(e) {
   if (!_charts.trend || !_trendCache.value?.data?.length) return
+  if (!rangeEnabled.value) return  // 区间开关关闭时不响应点击
   const pct = _clientXToPct(e.clientX)
   isRangeMode.value = true
 
