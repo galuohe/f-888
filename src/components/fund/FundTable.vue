@@ -402,9 +402,16 @@ function getShares(f) {
 
 function getTodayProfit(f) {
   const currentNav = getCurrentNav(f)
-  if (currentNav == null || !f.prevNav) return null
+  if (currentNav == null) return null
   const shares = getShares(f)
   if (!shares) return null
+  // 盘中实时估值：优先用 gszzl 推算昨日净值，与涨跌幅展示保持一致
+  // 避免因 prevNav 被误写为持仓成本而导致盈亏与涨跌幅方向矛盾
+  if (isLiveEstimate(f) && f.gszzl && !isNaN(f.gszzl)) {
+    const impliedPrevNav = currentNav / (1 + f.gszzl / 100)
+    return (currentNav - impliedPrevNav) * shares
+  }
+  if (!f.prevNav) return null
   return (currentNav - f.prevNav) * shares
 }
 

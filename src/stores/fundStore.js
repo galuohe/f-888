@@ -216,9 +216,10 @@ export const useFundStore = defineStore('fund', () => {
               if (f.holdingShares > 0) {
                 f.amount = parseFloat((f.holdingShares * cnav).toFixed(2))
               }
-            } else if (prevNavFromTrend && (!f.prevNav || f.prevNav === f.confirmedNav)) {
-              // confirmedNav 已是最新，但 prevNav 缺失或错误地等于 confirmedNav
-              // 用 trend 倒数第二项修正 prevNav，确保涨跌幅/盈亏能正确计算
+            } else if (prevNavFromTrend) {
+              // confirmedNav 已是最新，始终用 trend 倒数第二项修正 prevNav
+              // 修复：之前仅在 prevNav 为空或等于 confirmedNav 时更新，
+              // 导致 prevNav 被误设为持仓成本后永远无法纠正
               f.prevNav = prevNavFromTrend
             }
           }
@@ -363,10 +364,17 @@ export const useFundStore = defineStore('fund', () => {
       const shares = (f.holdingShares !== null && f.holdingShares > 0)
         ? f.holdingShares : (costNav && f.amount ? f.amount / costNav : 0)
 
-      if (hasTodayData && f.prevNav && currentNav !== null && !isNaN(currentNav) && shares > 0) {
-        todayProfitSum += (currentNav - f.prevNav) * shares
-        yesterdayValue += f.prevNav * shares
-        hasLive = true
+      if (hasTodayData && currentNav !== null && !isNaN(currentNav) && shares > 0) {
+        // 优先用 gszzl 推算昨日净值，避免 prevNav 被误设为持仓成本导致盈亏错误
+        let effectivePrevNav = f.prevNav
+        if (!f.navConfirmed && f.gszzl && !isNaN(f.gszzl) && f.gsz) {
+          effectivePrevNav = f.gsz / (1 + f.gszzl / 100)
+        }
+        if (effectivePrevNav && effectivePrevNav > 0) {
+          todayProfitSum += (currentNav - effectivePrevNav) * shares
+          yesterdayValue += effectivePrevNav * shares
+          hasLive = true
+        }
       }
 
       const costBasisNav = (f.costBasisLocked && f.costBasis !== null && f.costBasis > 0)
