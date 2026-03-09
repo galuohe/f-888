@@ -370,8 +370,8 @@ export const useFundStore = defineStore('fund', () => {
       }
 
       const costBasisNav = (f.costBasisLocked && f.costBasis !== null && f.costBasis > 0)
-        ? f.costBasis : costNav
-      const navForAccum = hasTodayData ? currentNav : (f.prevNav || currentNav)
+        ? f.costBasis : costNav 
+      const navForAccum = hasTodayData ? currentNav : (f.confirmedNav ?? f.prevNav ?? currentNav ?? null)
       const accumShares = (f.holdingShares !== null && f.holdingShares > 0)
         ? f.holdingShares : (f.amount / (costBasisNav || costNav))
       if (navForAccum !== null && !isNaN(navForAccum) && costBasisNav) {
