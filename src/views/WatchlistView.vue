@@ -180,20 +180,32 @@
 
     <!-- 添加自选 Modal -->
     <BaseModal v-model="showAddModal" title="添加自选">
-      <div class="form-group">
-        <label>基金代码</label>
+      <div class="search-wrap">
         <input
-          v-model="addForm.code"
+          v-model="addKeyword"
+          class="search-input"
           type="text"
-          placeholder="6位基金代码"
-          maxlength="6"
-          @keyup.enter="handleAdd"
+          placeholder="输入基金代码或名称"
+          autocomplete="off"
+          @input="onAddInput"
         />
+        <span v-if="addSearching" class="spinner search-spinner"></span>
       </div>
-      <div v-if="addError" style="color:var(--profit);font-size:12px;margin-bottom:12px;">{{ addError }}</div>
-      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;">
-        <button class="btn btn-cancel-modal" @click="showAddModal = false">取消</button>
-        <button class="btn btn-primary" @click="handleAdd">添加</button>
+      <div v-if="addError" style="color:var(--profit);font-size:12px;margin:8px 0 0;">{{ addError }}</div>
+      <div class="search-results">
+        <div v-if="!addKeyword.trim()" class="search-hint">请输入代码或名称关键词</div>
+        <div v-else-if="addSearching && addResults.length === 0" class="search-hint">搜索中…</div>
+        <div v-else-if="!addSearching && addResults.length === 0" class="search-hint">未找到相关基金</div>
+        <div
+          v-else
+          v-for="r in addResults"
+          :key="r.CODE"
+          class="result-item"
+          @click="pickWatchFund(r)"
+        >
+          <span class="result-code">{{ r.CODE }}</span>
+          <span class="result-name">{{ r.NAME }}</span>
+        </div>
       </div>
     </BaseModal>
 
@@ -271,6 +283,7 @@ import { ref, computed } from 'vue'
 import { useFundStore } from '@/stores/fundStore'
 import { useWatchStore } from '@/stores/watchStore'
 import { fmt, fmtMD, getTodayStr } from '@/utils/format'
+import { searchFunds } from '@/services/fundApi'
 import { getMarketBadge } from '@/utils/market'
 import BaseModal from '@/components/common/BaseModal.vue'
 import TagModal from '@/components/common/TagModal.vue'
@@ -280,10 +293,13 @@ import AddFundModal from '@/components/fund/AddFundModal.vue'
 const fundStore = useFundStore()
 const watchStore = useWatchStore()
 
-// ── 添加自选 ──
+// ── 添加自选（搜索模式）──
 const showAddModal = ref(false)
-const addForm = ref({ code: '' })
+const addKeyword = ref('')
+const addResults = ref([])
+const addSearching = ref(false)
 const addError = ref('')
+let _addSearchTimer = null
 
 // ── 展开行 ──
 const expandedCode = ref(null)
@@ -476,20 +492,31 @@ function handleRemove(code) {
   if (expandedCode.value === code) expandedCode.value = null
 }
 
-async function handleAdd() {
+function onAddInput() {
   addError.value = ''
-  const code = addForm.value.code.trim()
-  if (!/^\d{6}$/.test(code)) {
-    addError.value = '请输入6位数字基金代码'
-    return
-  }
-  const ok = watchStore.addWatch({ code })
+  if (_addSearchTimer) clearTimeout(_addSearchTimer)
+  if (!addKeyword.value.trim()) { addResults.value = []; return }
+  addSearching.value = true
+  _addSearchTimer = setTimeout(async () => {
+    try {
+      addResults.value = await searchFunds(addKeyword.value)
+    } finally {
+      addSearching.value = false
+    }
+  }, 300)
+}
+
+async function pickWatchFund(r) {
+  addError.value = ''
+  const code = r.CODE
+  const ok = watchStore.addWatch({ code, name: r.NAME })
   if (!ok) {
     addError.value = '该基金已在自选列表中'
     return
   }
   showAddModal.value = false
-  addForm.value = { code: '' }
+  addKeyword.value = ''
+  addResults.value = []
   window.$toast?.('已添加自选，正在刷新…', 'success')
   await fundStore.refreshAll(watchStore)
 }
@@ -653,4 +680,23 @@ async function handleAdd() {
 .cell-main { font-size: 14px; font-weight: 500; line-height: 1.2; }
 .cell-sub { font-size: 11px; line-height: 1.2; }
 .cell-sub-muted { color: var(--text-secondary); }
+
+/* 搜索添加自选 */
+.search-wrap { position: relative; margin-bottom: 12px; }
+.search-input { width: 100%; box-sizing: border-box; padding-right: 36px; }
+.search-spinner { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); }
+.search-results {
+  min-height: 120px; max-height: 300px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary);
+}
+.search-hint { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
+.result-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; cursor: pointer;
+  border-bottom: 1px solid var(--border); transition: background 0.12s;
+}
+.result-item:last-child { border-bottom: none; }
+.result-item:hover { background: rgba(99, 102, 241, 0.12); }
+.result-code { font-size: 12px; color: var(--text-muted); min-width: 52px; font-family: monospace; }
+.result-name { font-size: 13px; color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

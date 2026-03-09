@@ -4,7 +4,7 @@ import { fetchOne } from '@/services/fundApi'
 import { fetchPingzhongdata } from '@/services/pingzhongdata'
 import { loadFunds, saveFunds, loadPnlHistory, savePnlHistory } from '@/utils/storage'
 import { getTodayStr } from '@/utils/format'
-import { isWeekend, getAutoRefreshInterval } from '@/utils/market'
+import { isWeekend, isTradingHours, getAutoRefreshInterval } from '@/utils/market'
 import { useAuthStore } from './authStore'
 
 export const useFundStore = defineStore('fund', () => {
@@ -113,14 +113,14 @@ export const useFundStore = defineStore('fund', () => {
           }
         }
 
-        const nowH = new Date().getHours()
-        const isWeekday = ![0, 6].includes(new Date().getDay())
-        const apiConfirmed =
-          data.jzrq === todayStr ||
-          (isWeekday && nowH >= 18 && (data.gztime || '').startsWith(todayStr))
+        const apiConfirmed = data.jzrq === todayStr
 
         if (alreadyConfirmedToday) {
           f.navConfirmed = true
+          // 如果 fundgz 已返回今日确认净值（jzrq === today），用 dwjz 作为权威值覆盖缓存
+          if (apiConfirmed && data.dwjz) {
+            f.confirmedNav = parseFloat(data.dwjz)
+          }
           if (f.confirmedNav) {
             f.gsz = f.confirmedNav
             if (f.prevNav) f.gszzl = parseFloat(((f.confirmedNav - f.prevNav) / f.prevNav * 100).toFixed(4))
@@ -130,7 +130,7 @@ export const useFundStore = defineStore('fund', () => {
           _updateAmountByShares(f)
         } else if (apiConfirmed) {
           f.navConfirmed = true
-          f.confirmedNav = parseFloat(data.jzrq === todayStr ? data.dwjz : (data.gsz || data.dwjz))
+          f.confirmedNav = parseFloat(data.dwjz)
           f.confirmedDate = todayStr
           _lockCostBasis(f)
           _lockHoldingShares(f)
@@ -169,11 +169,15 @@ export const useFundStore = defineStore('fund', () => {
       // f.jzrq 在 try 块内已由 data.jzrq 赋值，可安全使用
       const apiJzrq = f.jzrq || ''
       const prevNavBad = !f.prevNav || (f.confirmedNav && f.prevNav === f.confirmedNav)
+      // 缓存标记今日已确认，但 fundgz 的 jzrq 还没更新到今天 → 缓存可能不可靠，需要 pingzhongdata 校正
+      const cachedButUnverified = f.confirmedDate === todayStr2 && apiJzrq !== todayStr2
       const needFetch = !f.error && (
         !f.confirmedNav ||
         (f.confirmedDate !== todayStr2 && (weekend2 || nowH2 >= 15)) ||
         (apiJzrq && apiJzrq > (f.confirmedDate || '')) ||
-        prevNavBad
+        prevNavBad ||
+        (!f.navConfirmed && nowH2 >= 15) ||
+        cachedButUnverified
       )
       if (needFetch) {
         try {
@@ -314,15 +318,19 @@ export const useFundStore = defineStore('fund', () => {
     }
   }
 
-  /** 设置自动刷新定时器 */
+  /** 设置自动刷新定时器（仅盘中 9:30-15:00 启动，每分钟检查一次是否需要刷新） */
   function resetTimer(watchStore) {
     if (timer.value) clearInterval(timer.value)
-    const todayStr = getTodayStr()
+    timer.value = null
     if (isWeekend()) return
+    const todayStr = getTodayStr()
     const allConfirmed = funds.value.length > 0 && funds.value.every(f => f.confirmedDate === todayStr)
     if (allConfirmed) return
-    const interval = getAutoRefreshInterval()
-    timer.value = setInterval(() => refreshAll(watchStore), interval)
+
+    // 每 60 秒检查一次，但只在真正盘中时才执行刷新
+    timer.value = setInterval(() => {
+      if (isTradingHours()) refreshAll(watchStore)
+    }, 60000)
   }
 
   function stopTimer() {

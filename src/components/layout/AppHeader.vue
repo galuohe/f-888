@@ -37,7 +37,7 @@
 import { computed } from 'vue'
 import { useAuthStore } from '@/stores/authStore'
 import { useFundStore } from '@/stores/fundStore'
-import { isWeekend, getAutoRefreshInterval } from '@/utils/market'
+import { isWeekend, isTradingHours } from '@/utils/market'
 import { getTodayStr } from '@/utils/format'
 
 const emit = defineEmits(['open-auth'])
@@ -57,15 +57,12 @@ const lastUpdateTimeStr = computed(() => {
 
 const autoRefreshLabel = computed(() => {
   if (isWeekend()) return '非交易日'
-  const todayStr = getTodayStr()
-  const allConfirmed =
-    fundStore.funds.length > 0 &&
-    fundStore.funds.every(f => f.confirmedDate === todayStr)
-  if (allConfirmed) return '✓ 净值已全部确认，已停止自动刷新'
   if (fundStore.funds.length === 0) return ''
-  const intervalMs = getAutoRefreshInterval()
-  const secs = intervalMs / 1000
-  return `每 ${secs} 秒自动刷新`
+  const todayStr = getTodayStr()
+  const allConfirmed = fundStore.funds.every(f => f.confirmedDate === todayStr)
+  if (allConfirmed) return '✓ 净值已全部确认'
+  // 只在盘中才显示自动刷新标识
+  return isTradingHours() ? '每 60 秒自动刷新' : ''
 })
 
 function openAuth() {

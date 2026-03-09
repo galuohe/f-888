@@ -91,9 +91,8 @@ function _lastTradingDayData(trend) {
  * Batch-fetch fetchOne for an array of {code, sector}, BATCH_SIZE concurrent.
  * Returns a map: code → raw result object (or undefined if failed).
  */
-async function _fetchOneBatch(pool, BATCH = 5, onProgress) {
+async function _fetchOneBatch(pool, BATCH = 25, onProgress) {
   const todayStr = getTodayStr()
-  const nowH     = new Date().getHours()
   const isTradingDay = !_isWeekend()
   const results  = {}
 
@@ -104,19 +103,28 @@ async function _fetchOneBatch(pool, BATCH = 5, onProgress) {
       try {
         const d = await fetchOne(code)
         const gszzl = parseFloat(d.gszzl)
+        // gszzl 无效（如部分 QDII 基金盘前无估值）则跳过，由 pingzhongdata 兜底
         if (isNaN(gszzl)) return null
 
-        const jzrq       = (d.jzrq   || '').trim()
-        const gztime     = (d.gztime || '').trim()
-        const jzrqToday  = jzrq === todayStr
-        const gztimeToday = gztime.startsWith(todayStr) && nowH >= 18
-        const todayConf  = jzrqToday || gztimeToday
-        const confirmed  = isTradingDay
-          ? (todayConf ? true : false)
+        const jzrq      = (d.jzrq || '').trim()
+        const jzrqToday = jzrq === todayStr
+        const confirmed = isTradingDay
+          ? (jzrqToday ? true : false)
           : (jzrqToday ? true : null)
+
+        // 判断是否有今日估值
+        const hasGsz = d.gsz && d.gsz !== '' && !isNaN(parseFloat(d.gsz))
+
+        // nav：优先今日确认净值，其次估值，最后历史确认净值
         const nav = jzrqToday && d.dwjz && d.dwjz !== ''
           ? d.dwjz
-          : (d.gsz || d.dwjz || '--')
+          : (hasGsz ? d.gsz : (d.dwjz || '--'))
+
+        // navDate：与 nav 值对应的日期
+        //   - 今日确认净值 → jzrq（今天）
+        //   - 估值（gsz）  → todayStr（估值是今天的）
+        //   - 历史确认净值 → jzrq（上次确认日期）
+        const navDate = jzrqToday ? jzrq : (hasGsz ? todayStr : jzrq)
 
         return {
           code: d.fundcode || code,
@@ -125,7 +133,8 @@ async function _fetchOneBatch(pool, BATCH = 5, onProgress) {
           nav,
           ret: gszzl,
           confirmed,
-          jzrq: jzrqToday ? jzrq : (gztimeToday ? todayStr : jzrq),
+          jzrq: navDate,
+          isEstimate: !jzrqToday && hasGsz,  // true=显示的是今日gsz估值，false=历史确认净值
         }
       } catch (_) {
         return null
@@ -140,7 +149,7 @@ async function _fetchOneBatch(pool, BATCH = 5, onProgress) {
  * Batch-fetch fetchPingzhongdata for an array of {code, sector}.
  * Returns array of result objects sorted by ret desc.
  */
-async function _fetchPzdBatch(pool, BATCH = 10, onProgress) {
+async function _fetchPzdBatch(pool, BATCH = 20, onProgress) {
   const todayStr = getTodayStr()
   const results  = []
 
@@ -160,7 +169,9 @@ async function _fetchPzdBatch(pool, BATCH = 10, onProgress) {
           nav: data.nav,
           jzrq: data.jzrq,
           ret: data.ret,
-          confirmed: data.jzrq === todayStr ? true : null,
+          // pingzhongdata 只含历史确认净值，永远不是盘中估值
+          confirmed: data.jzrq === todayStr ? true : (_isWeekend() ? null : false),
+          isEstimate: false,
         }
       } catch (_) {
         return null
@@ -196,7 +207,7 @@ export function useMarketData() {
     try {
       // ── Stage 1: fetchOne (fast, handles both estimated and confirmed) ──
       if (onStatus) onStatus('加载中…')
-      const raw = await _fetchOneBatch(pool, 15, (done, total) => {
+      const raw = await _fetchOneBatch(pool, 25, (done, total) => {
         if (onStatus) onStatus(`加载中… ${done}/${total}`)
       })
 
@@ -204,7 +215,7 @@ export function useMarketData() {
       const failedCodes = pool.filter(p => !raw[p.code])
       if (failedCodes.length > 0) {
         if (onStatus) onStatus(`补充加载 ${failedCodes.length} 只…`)
-        const fallback = await _fetchPzdBatch(failedCodes, 10, (done, total) => {
+        const fallback = await _fetchPzdBatch(failedCodes, 20, (done, total) => {
           if (onStatus) onStatus(`补充加载 ${done}/${total}`)
         })
         fallback.forEach(r => { raw[r.code] = r })
@@ -219,11 +230,13 @@ export function useMarketData() {
       _lastRefresh.value = new Date()
       window._mrCache = results  // 供 AI 助手读取板块行情
 
-      // ── Stage 2: fetchPingzhongdata for confirmed NAVs after 15:00 or weekends ──
-      const needPzd = _useConfirmedNav() && results.length > 0
+      // ── Stage 2: fetchPingzhongdata for confirmed NAVs after 18:00 or weekends ──
+      // 只对 Stage 1 未确认（confirmed !== true）的基金发请求，减少重复网络请求
+      const unconfirmedPool = pool.filter(p => raw[p.code]?.confirmed !== true)
+      const needPzd = _useConfirmedNav() && unconfirmedPool.length > 0
       if (needPzd) {
-        if (onStatus) onStatus('正在获取确认净值…')
-        const pzdResults = await _fetchPzdBatch(pool, 10, (done, total) => {
+        if (onStatus) onStatus(`正在获取确认净值（${unconfirmedPool.length} 只）…`)
+        const pzdResults = await _fetchPzdBatch(unconfirmedPool, 20, (done, total) => {
           if (onStatus) onStatus(`确认净值 ${done}/${total}…`)
         })
 
