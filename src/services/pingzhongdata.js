@@ -1,36 +1,41 @@
 /**
  * 东方财富 pingzhongdata API
- * 用于获取近 90 日净值走势 / 历史确认净值
+ * 获取基金净值走势数据（3种）：单位净值、累计净值、累计收益率
  * 使用 script 标签注入，无 CORS 限制
  */
 
 let _pzdSeq = 0
 
-/** 内存缓存：code → { data, name, ts } */
+/** 内存缓存：code → { netWorth, acWorth, grandTotal, name, ts } */
 const _pzdCache = new Map()
 const CACHE_TTL = 5 * 60 * 1000  // 5 分钟
 
 /**
  * 串行队列：保证同一时刻只有一个 pingzhongdata script 在执行，
- * 避免多个 script 并发写 window.Data_netWorthTrend 互相覆盖。
+ * 避免多个 script 并发写全局变量互相覆盖。
  */
 let _pzdQueue = Promise.resolve()
 
 /**
- * 获取基金净值历史趋势（Data_netWorthTrend）
+ * 获取基金净值历史数据（3种走势）
  * @param {string} code - 6 位基金代码
- * @returns {Promise<{ data: Array, name: string|null }>}
+ * @returns {Promise<{ data: Array, acWorth: Array, grandTotal: Array, name: string|null }>}
+ *   - data: 单位净值 [{x, y, equityReturn, unitMoney}]（兼容旧消费端）
+ *   - acWorth: 累计净值 [[timestamp, nav]]
+ *   - grandTotal: 累计收益率 [{name, data: [[timestamp, pct]]}]
  */
 export function fetchPingzhongdata(code) {
-  // 命中缓存则立即返回
   const cached = _pzdCache.get(code)
   if (cached && Date.now() - cached.ts < CACHE_TTL) {
-    return Promise.resolve({ data: cached.data, name: cached.name })
+    return Promise.resolve({
+      data: cached.netWorth,
+      acWorth: cached.acWorth,
+      grandTotal: cached.grandTotal,
+      name: cached.name
+    })
   }
 
-  // 将实际请求追加到串行队列末尾
   const req = _pzdQueue.then(() => _doFetch(code))
-  // 让队列继续推进，即使本次请求失败也不阻断后续请求
   _pzdQueue = req.catch(() => {})
   return req
 }
@@ -60,11 +65,13 @@ function _doFetch(code) {
       if (settled) return
       settled = true
       cleanup()
-      const data = window.Data_netWorthTrend || []
+      const netWorth = window.Data_netWorthTrend || []
+      const acWorth = window.Data_ACWorthTrend || []
+      const grandTotal = window.Data_grandTotal || []
       const name = window.fS_name || null
       // 写入缓存
-      _pzdCache.set(code, { data, name, ts: Date.now() })
-      resolve({ data, name })
+      _pzdCache.set(code, { netWorth, acWorth, grandTotal, name, ts: Date.now() })
+      resolve({ data: netWorth, acWorth, grandTotal, name })
     }
     script.onerror = function () {
       if (settled) return

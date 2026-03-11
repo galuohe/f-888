@@ -40,13 +40,11 @@
             :class="[profitClass(fundStore.summary.totalAccum), { masked: hiddenCols.accum }]"
           >
             {{ fundStore.summary.totalAccum >= 0 ? '+¥' : '-¥' }}{{ fmt(Math.abs(fundStore.summary.totalAccum), 2) }}
-          </div>
-          <div
-            v-if="fundStore.summary.totalAccumRate != null"
-            class="summary-sub"
-            :class="profitClass(fundStore.summary.totalAccumRate)"
-          >
-            {{ fundStore.summary.totalAccumRate >= 0 ? '+' : '' }}{{ fmt(fundStore.summary.totalAccumRate, 2) }}%
+            <span
+              v-if="fundStore.summary.totalAccumRate != null"
+              class="summary-rate"
+              :class="profitClass(fundStore.summary.totalAccumRate)"
+            >{{ fundStore.summary.totalAccumRate >= 0 ? '+' : '' }}{{ fmt(fundStore.summary.totalAccumRate, 2) }}%</span>
           </div>
         </div>
       </div>

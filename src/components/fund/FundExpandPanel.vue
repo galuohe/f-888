@@ -15,6 +15,13 @@
           </div>
         </div>
 
+        <!-- 数据类型切换 -->
+        <div v-if="activeTab === 'trend'" class="fd-dtype-tabs">
+          <button class="fd-dtype-btn" :class="{ active: trendDataType === 'netWorth' }" @click="switchDataType('netWorth')">单位净值</button>
+          <button class="fd-dtype-btn" :class="{ active: trendDataType === 'acWorth' }" @click="switchDataType('acWorth')">累计净值</button>
+          <button class="fd-dtype-btn" :class="{ active: trendDataType === 'grandTotal' }" @click="switchDataType('grandTotal')">累计收益率</button>
+        </div>
+
         <!-- 回撤修复天数 -->
         <div v-if="activeTab === 'trend' && trendStats && (trendStats.histRecoveryDays != null || trendStats.intervalRecoveryDays != null)" class="fd-recovery-row">
           <div v-if="trendStats.histRecoveryDays != null" class="fd-recovery-cell">
@@ -31,26 +38,48 @@
           </div>
         </div>
 
-        <!-- 趋势图：统计行（收益 + 最大 + 最小 + 回撤 一行） -->
+        <!-- 趋势图：统计行 -->
         <div v-if="activeTab === 'trend'" class="fd-stats-row">
-          <div class="fd-stat">
-            <span class="fd-stat-label">{{ isRangeMode ? '区间收益' : periodOptions.find(p => p.value === trendPeriod)?.label || '收益' }}</span>
-            <span class="fd-stat-val" :class="currentProfitRate != null ? (currentProfitRate >= 0 ? 'profit' : 'loss') : ''">
-              {{ currentProfitRate != null ? (currentProfitRate >= 0 ? '+' : '') + fmt(currentProfitRate, 2) + '%' : '--' }}
-            </span>
-          </div>
-          <div v-if="trendStats" class="fd-stat">
-            <span class="fd-stat-label">最高</span>
-            <span class="fd-stat-val">{{ trendStats.max }}</span>
-          </div>
-          <div v-if="trendStats" class="fd-stat">
-            <span class="fd-stat-label">最低</span>
-            <span class="fd-stat-val">{{ trendStats.min }}</span>
-          </div>
-          <div v-if="trendStats" class="fd-stat">
-            <span class="fd-stat-label">最大回撤</span>
-            <span class="fd-stat-val loss">{{ trendStats.dd }}</span>
-          </div>
+          <template v-if="trendStats && trendStats.isGrandTotal">
+            <!-- 累计收益率统计 -->
+            <div class="fd-stat">
+              <span class="fd-stat-label">{{ periodOptions.find(p => p.value === trendPeriod)?.label || '成立来' }}</span>
+              <span class="fd-stat-val" :class="trendStats.returnRate?.startsWith('+') ? 'profit' : 'loss'">{{ trendStats.returnRate }}</span>
+            </div>
+            <div class="fd-stat">
+              <span class="fd-stat-label">最高</span>
+              <span class="fd-stat-val profit">{{ trendStats.max }}</span>
+            </div>
+            <div class="fd-stat">
+              <span class="fd-stat-label">最低</span>
+              <span class="fd-stat-val loss">{{ trendStats.min }}</span>
+            </div>
+            <div class="fd-stat">
+              <span class="fd-stat-label">最大回撤</span>
+              <span class="fd-stat-val loss">{{ trendStats.dd }}</span>
+            </div>
+          </template>
+          <template v-else>
+            <!-- 单位净值 / 累计净值统计 -->
+            <div class="fd-stat">
+              <span class="fd-stat-label">{{ isRangeMode ? '区间收益' : periodOptions.find(p => p.value === trendPeriod)?.label || '收益' }}</span>
+              <span class="fd-stat-val" :class="currentProfitRate != null ? (currentProfitRate >= 0 ? 'profit' : 'loss') : ''">
+                {{ currentProfitRate != null ? (currentProfitRate >= 0 ? '+' : '') + fmt(currentProfitRate, 2) + '%' : '--' }}
+              </span>
+            </div>
+            <div v-if="trendStats" class="fd-stat">
+              <span class="fd-stat-label">最高</span>
+              <span class="fd-stat-val">{{ trendStats.max }}</span>
+            </div>
+            <div v-if="trendStats" class="fd-stat">
+              <span class="fd-stat-label">最低</span>
+              <span class="fd-stat-val">{{ trendStats.min }}</span>
+            </div>
+            <div v-if="trendStats" class="fd-stat">
+              <span class="fd-stat-label">最大回撤</span>
+              <span class="fd-stat-val loss">{{ trendStats.dd }}</span>
+            </div>
+          </template>
         </div>
 
         <!-- 分时图统计行 -->
@@ -403,6 +432,11 @@ const showBandHelp = ref(false)
 const holdingsLoading = ref(false)
 const holdingsError = ref(null)
 const trendPeriod = ref('3m')  // 默认三月
+const trendDataType = ref('netWorth')  // 数据类型：netWorth / acWorth / grandTotal
+
+// 走势原始数据（全量，由 fetchPingzhongdata 返回）
+const _rawNetWorth = ref(null)   // [{x, y}]
+const _rawAcWorth = ref(null)    // [[ts, nav]]
 
 const periodOptions = [
   { value: '1m', label: '近1月' },
@@ -411,7 +445,9 @@ const periodOptions = [
   { value: '1y', label: '近1年' },
   { value: '2y', label: '近2年' },
   { value: '3y', label: '近3年' },
+  { value: '5y', label: '近5年' },
   { value: 'ytd', label: '今年来' },
+  { value: 'all', label: '成立来' },
 ]
 const rangeLeftPct = ref(0)   // 左边界百分比
 const rangeRightPct = ref(100) // 右边界百分比
@@ -799,7 +835,7 @@ const bandSignal = computed(() => {
     // 回撤深于 t2 → 低位区
     zone = '低位机会区'
     zoneLevel = 'low'
-    advice = '当前处于历史波动的低位区域，跌幅较深，安全边际高。建议分批布局，把资金分成3-5份，进入低位区后先买入1份，每下跌2%左右再买入1份。'
+    advice = '当前处于历史波动的低位区域，跌幅较深，安全边际高。建议分批布局，把资金分成3-5份，进入低位区后先买入1份，每下跌2%左右再买入1份，若遇上涨则立即停止买入。'
   } else {
     zone = '观望区'
     zoneLevel = 'mid'
@@ -851,6 +887,121 @@ function switchTab(tab) {
   }, 30)
 }
 
+function switchDataType(dtype) {
+  if (trendDataType.value === dtype) return
+  trendDataType.value = dtype
+  _buildTrendCache()
+  renderTrendChart()
+}
+
+/**
+ * 根据当前 trendDataType 和 trendPeriod 构建 _trendCache
+ */
+function _buildTrendCache() {
+  const period = trendPeriod.value
+  const d = new Date()
+  let cutoff = 0
+  if (period === 'all') {
+    cutoff = 0
+  } else if (period === 'ytd') {
+    d.setMonth(0, 1); d.setHours(0, 0, 0, 0); cutoff = d.getTime()
+  } else {
+    d.setDate(5)
+    const periodMonths = { '1m': 1, '3m': 3, '6m': 6, '1y': 12, '2y': 24, '3y': 36, '5y': 60 }
+    d.setMonth(d.getMonth() - (periodMonths[period] || 3)); d.setHours(0, 0, 0, 0); cutoff = d.getTime()
+  }
+
+  const dtype = trendDataType.value
+  let allData = []  // 统一为 [[ts, val]] 格式
+
+  if (dtype === 'netWorth' && _rawNetWorth.value) {
+    allData = _rawNetWorth.value.map(d => [d.x, Number(d.y)])
+  } else if (dtype === 'acWorth' && _rawAcWorth.value) {
+    allData = _rawAcWorth.value.map(d => [d[0], Number(d[1])])
+  } else if (dtype === 'grandTotal' && _rawAcWorth.value && _rawAcWorth.value.length > 0) {
+    // 累计收益率：先按时间过滤累计净值，再以区间第一个点为基准计算
+    const sorted = [..._rawAcWorth.value].sort((a, b) => a[0] - b[0])
+    const slicedAc = cutoff > 0 ? sorted.filter(d => d[0] >= cutoff) : sorted
+    if (slicedAc.length > 0) {
+      const baseNav = Number(slicedAc[0][1])
+      if (baseNav > 0) {
+        // 直接生成最终数据，跳过后面的 cutoff 过滤
+        const vals = slicedAc.map(d => [d[0], ((Number(d[1]) / baseNav) - 1) * 100])
+        allData = vals
+        cutoff = 0  // 已经过滤过了，不再二次过滤
+      }
+    }
+  }
+
+  if (!allData.length) { _trendCache.value = null; return }
+
+  allData.sort((a, b) => a[0] - b[0])
+
+  // 单位净值走势保存完整数据用于波段信号计算
+  if (dtype === 'netWorth') {
+    _fullTrendData.value = allData
+  }
+
+  const sliced = cutoff > 0 ? allData.filter(d => d[0] >= cutoff) : allData
+  if (!sliced.length) { _trendCache.value = null; return }
+
+  const vals = sliced.map(d => d[1])
+  const maxV = Math.max(...vals), minV = Math.min(...vals)
+
+  if (dtype === 'grandTotal') {
+    // 累计收益率：用绝对值差计算最大回撤（从最高收益率跌到最低收益率的幅度）
+    let gtPeakIdx = 0, gtTroughIdx = 0, gtMaxDd = 0
+    let curPeak = vals[0], curPeakIdx = 0
+    for (let i = 1; i < vals.length; i++) {
+      if (vals[i] > curPeak) { curPeak = vals[i]; curPeakIdx = i }
+      else {
+        const dd = curPeak - vals[i]  // 百分点差值
+        if (dd > gtMaxDd) { gtMaxDd = dd; gtPeakIdx = curPeakIdx; gtTroughIdx = i }
+      }
+    }
+    _trendCache.value = { data: sliced, peakIdx: gtPeakIdx, troughIdx: gtTroughIdx, maxDd: gtMaxDd / 100, maxV, minV }
+    const lastVal = vals[vals.length - 1]
+    trendStats.value = {
+      returnRate: (lastVal >= 0 ? '+' : '') + lastVal.toFixed(2) + '%',
+      max: (maxV >= 0 ? '+' : '') + maxV.toFixed(2) + '%',
+      min: (minV >= 0 ? '+' : '') + minV.toFixed(2) + '%',
+      dd: gtMaxDd.toFixed(2) + '%',
+      isGrandTotal: true,
+      histRecoveryDays: null, intervalRecoveryDays: null
+    }
+  } else {
+    const { peakIdx, troughIdx, maxDd } = _findMaxDrawdown(vals)
+    _trendCache.value = { data: sliced, peakIdx, troughIdx, maxDd, maxV, minV }
+
+    if (dtype === 'netWorth') {
+      let histRecoveryDays = null, intervalRecoveryDays = null
+      if (maxDd > 0 && peakIdx < troughIdx) {
+        const peakVal = vals[peakIdx]
+        let recovered = false
+        for (let i = troughIdx + 1; i < vals.length; i++) {
+          if (vals[i] >= peakVal) { intervalRecoveryDays = i - troughIdx; recovered = true; break }
+        }
+        if (!recovered) intervalRecoveryDays = -(vals.length - 1 - troughIdx)
+      }
+      if (_fullTrendData.value && _fullTrendData.value.length > 60) {
+        const fullVals = _fullTrendData.value.map(d => d[1])
+        const fullDD = _findMaxDrawdown(fullVals)
+        if (fullDD.maxDd > 0 && fullDD.peakIdx < fullDD.troughIdx) {
+          const fpv = fullVals[fullDD.peakIdx]
+          for (let i = fullDD.troughIdx + 1; i < fullVals.length; i++) {
+            if (fullVals[i] >= fpv) { histRecoveryDays = i - fullDD.troughIdx; break }
+          }
+          if (histRecoveryDays === null) histRecoveryDays = -(fullVals.length - 1 - fullDD.troughIdx)
+        }
+      }
+      trendStats.value = { max: maxV.toFixed(4), min: minV.toFixed(4), dd: (maxDd * 100).toFixed(2) + '%', histRecoveryDays, intervalRecoveryDays }
+    } else {
+      // 累计净值
+      trendStats.value = { max: maxV.toFixed(4), min: minV.toFixed(4), dd: (maxDd * 100).toFixed(2) + '%', histRecoveryDays: null, intervalRecoveryDays: null }
+    }
+  }
+}
+
 /**
  * 计算最大回撤区间 [peakIdx, troughIdx]
  * 遍历找出从任意峰值到其后谷值最大跌幅对应的下标
@@ -872,74 +1023,32 @@ function _findMaxDrawdown(vals) {
 function loadTrend() {
   const el = trendEl.value
   if (el) el.innerHTML = '<div class="fd-loading"><span class="spinner"></span>加载中…</div>'
-  // 重置统计数据
   trendStats.value = null
   _trendCache.value = null
   resetRange()
 
   if (_charts.trend) { _charts.trend.dispose(); delete _charts.trend }
 
-  // 计算 cutoff 时间戳
-  const d = new Date()
-  const period = trendPeriod.value
-  if (period === 'ytd') {
-    // 今年来：从今年1月1日开始
-    d.setMonth(0, 1)
-    d.setHours(0, 0, 0, 0)
-  } else {
-    d.setDate(5)
-    const periodMonths = { '1m': 1, '3m': 3, '6m': 6, '1y': 12, '2y': 24, '3y': 36 }
-    const backMonths = periodMonths[period] || 3
-    d.setMonth(d.getMonth() - backMonths)
-    d.setHours(0, 0, 0, 0)
+  // 如果已有原始数据（仅切换时间周期），直接重建缓存
+  if (_rawNetWorth.value) {
+    _buildTrendCache()
+    if (!_trendCache.value) { if (el) el.innerHTML = '<div class="fd-empty">暂无净值数据</div>'; return }
+    if (activeTab.value === 'trend') renderTrendChart()
+    return
   }
-  const cutoff = d.getTime()
 
   fetchPingzhongdata(props.code).then(pzd => {
+    // 保存 3 种原始数据
     const raw = pzd.data || pzd
-    const allSorted = (Array.isArray(raw) ? raw : []).sort((a, b) => a.x - b.x)
-    // 保存完整数据用于技术指标计算
-    _fullTrendData.value = allSorted.map(d => [d.x, Number(d.y)])
-    const sliced = allSorted.filter(d => d.x >= cutoff)
-    const data = sliced.map(d => [d.x, Number(d.y)])
-    if (!data.length) { if (el) el.innerHTML = '<div class="fd-empty">暂无净值数据</div>'; return }
-    const vals = sliced.map(d => Number(d.y))
-    const maxV = Math.max(...vals), minV = Math.min(...vals)
-    const { peakIdx, troughIdx, maxDd } = _findMaxDrawdown(vals)
+    _rawNetWorth.value = (Array.isArray(raw) ? raw : []).sort((a, b) => a.x - b.x)
+    _rawAcWorth.value = Array.isArray(pzd.acWorth) ? pzd.acWorth.sort((a, b) => a[0] - b[0]) : []
 
-    // 计算回撤修复天数：从最大回撤的谷底到之后首次回到峰值的天数
-    let histRecoveryDays = null  // 历史最大回撤修复天数
-    let intervalRecoveryDays = null  // 区间最大回撤修复天数
-    if (maxDd > 0 && peakIdx < troughIdx) {
-      const peakVal = vals[peakIdx]
-      let recovered = false
-      for (let i = troughIdx + 1; i < vals.length; i++) {
-        if (vals[i] >= peakVal) {
-          intervalRecoveryDays = i - troughIdx
-          recovered = true
-          break
-        }
-      }
-      if (!recovered) intervalRecoveryDays = -(vals.length - 1 - troughIdx) // 负数表示尚未修复，值为已经过天数
-    }
-    // 历史最大回撤修复天数（基于全部数据）
-    if (_fullTrendData.value && _fullTrendData.value.length > 60) {
-      const fullVals = _fullTrendData.value.map(d => d[1])
-      const fullDD = _findMaxDrawdown(fullVals)
-      if (fullDD.maxDd > 0 && fullDD.peakIdx < fullDD.troughIdx) {
-        const fpv = fullVals[fullDD.peakIdx]
-        for (let i = fullDD.troughIdx + 1; i < fullVals.length; i++) {
-          if (fullVals[i] >= fpv) { histRecoveryDays = i - fullDD.troughIdx; break }
-        }
-        if (histRecoveryDays === null) histRecoveryDays = -(fullVals.length - 1 - fullDD.troughIdx)
-      }
-    }
 
-    trendStats.value = {
-      max: maxV.toFixed(4), min: minV.toFixed(4), dd: (maxDd * 100).toFixed(2) + '%',
-      histRecoveryDays, intervalRecoveryDays
-    }
-    _trendCache.value = { data, peakIdx, troughIdx, maxDd, maxV, minV }
+    // 波段信号始终基于单位净值全量数据
+    _fullTrendData.value = _rawNetWorth.value.map(d => [d.x, Number(d.y)])
+
+    _buildTrendCache()
+    if (!_trendCache.value) { if (el) el.innerHTML = '<div class="fd-empty">暂无净值数据</div>'; return }
     if (activeTab.value === 'trend') renderTrendChart()
   }).catch(e => { console.warn('[FundExpandPanel] loadTrend:', e); if (el) el.innerHTML = '<div class="fd-empty">数据加载失败</div>' })
 }
@@ -951,101 +1060,100 @@ function renderTrendChart() {
 
   const { data, peakIdx, troughIdx, maxDd, maxV, minV } = _trendCache.value
   const RED = '#f04040', GREEN = '#22c45e', YELLOW = '#f5a623'
+  const dtype = trendDataType.value
+  const isGrandTotal = dtype === 'grandTotal'
 
-  // 提取 x 轴标签（MM-DD）和 y 轴净值数组
+  // 提取 x 轴标签（MM-DD）和 y 轴数组
   const xCats = data.map(d => _formatTs(d[0]))
   const yVals = data.map(d => d[1])
 
-  // 分段着色：峰值前(红) → 回撤(绿) → 修复中(黄) → 修复后(红)
-  const mkArea = color => ({
-    opacity: 0.08,
-    color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color }, { offset: 1, color: 'rgba(0,0,0,0)' }] }
-  })
-  const mkSeries = (vals, startIdx, endIdx, color, withArea) => ({
-    type: 'line', symbol: 'none', smooth: false,
-    data: vals.map((v, i) => {
-      if (i < startIdx || i > endIdx) return null
-      return v
-    }),
-    connectNulls: false,
-    lineStyle: { width: 1.5, color },
-    areaStyle: withArea ? mkArea(color) : null
-  })
-
-  // 计算修复点
-  let recoveryIdx = -1
-  if (maxDd > 0 && peakIdx < troughIdx) {
-    const peakVal = yVals[peakIdx]
-    for (let i = troughIdx + 1; i < yVals.length; i++) {
-      if (yVals[i] >= peakVal) { recoveryIdx = i; break }
-    }
-  }
-
   const series = []
-  if (!maxDd || peakIdx >= troughIdx) {
-    // 无回撤，整段红色
+
+  if (dtype === 'netWorth') {
+    // ── 单位净值：分段着色 + 回撤修复标注 ──
+    const mkArea = color => ({
+      opacity: 0.08,
+      color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color }, { offset: 1, color: 'rgba(0,0,0,0)' }] }
+    })
+    const mkSeries = (vals, startIdx, endIdx, color, withArea) => ({
+      type: 'line', symbol: 'none', smooth: false,
+      data: vals.map((v, i) => (i < startIdx || i > endIdx) ? null : v),
+      connectNulls: false,
+      lineStyle: { width: 1.5, color },
+      areaStyle: withArea ? mkArea(color) : null
+    })
+
+    let recoveryIdx = -1
+    if (maxDd > 0 && peakIdx < troughIdx) {
+      const peakVal = yVals[peakIdx]
+      for (let i = troughIdx + 1; i < yVals.length; i++) {
+        if (yVals[i] >= peakVal) { recoveryIdx = i; break }
+      }
+    }
+
+    if (!maxDd || peakIdx >= troughIdx) {
+      series.push({ type: 'line', symbol: 'none', smooth: false, data: yVals, lineStyle: { width: 1.5, color: RED }, areaStyle: mkArea(RED) })
+    } else if (recoveryIdx > 0) {
+      series.push(mkSeries(yVals, 0, peakIdx, RED, true))
+      series.push(mkSeries(yVals, peakIdx, troughIdx, GREEN, true))
+      series.push(mkSeries(yVals, troughIdx, recoveryIdx, YELLOW, false))
+      if (recoveryIdx < yVals.length - 1) series.push(mkSeries(yVals, recoveryIdx, yVals.length - 1, RED, true))
+    } else {
+      series.push(mkSeries(yVals, 0, peakIdx, RED, true))
+      series.push(mkSeries(yVals, peakIdx, troughIdx, GREEN, true))
+      series.push(mkSeries(yVals, troughIdx, yVals.length - 1, YELLOW, false))
+    }
+
+    // 修复区域背景标注
+    if (maxDd > 0 && peakIdx < troughIdx) {
+      const recoveryEndIdx = recoveryIdx > 0 ? recoveryIdx : yVals.length - 1
+      const recoveryDays = recoveryIdx > 0 ? recoveryIdx - troughIdx : null
+      const yellowSeries = recoveryIdx > 0 ? series[2] : series[series.length - 1]
+      const labelText = recoveryIdx > 0 ? '✓ 已修复 ' + recoveryDays + '天' : '修复中'
+      const labelColor = recoveryIdx > 0 ? '#22c45e' : YELLOW
+      yellowSeries.markArea = {
+        silent: true,
+        data: [[
+          { xAxis: xCats[troughIdx], itemStyle: { color: 'rgba(245, 166, 35, 0.10)' },
+            label: { show: true, position: 'insideTop', formatter: labelText, color: labelColor, fontSize: 10, fontWeight: 600, padding: [4, 0, 0, 0] } },
+          { xAxis: xCats[recoveryEndIdx] }
+        ]]
+      }
+    }
+  } else {
+    // ── 累计净值 / 累计收益率：单色线 ──
+    const lineColor = isGrandTotal ? '#f5a623' : '#5b8ff9'
     series.push({
       type: 'line', symbol: 'none', smooth: false,
       data: yVals,
-      lineStyle: { width: 1.5, color: RED },
-      areaStyle: mkArea(RED)
+      lineStyle: { width: 1.5, color: lineColor },
+      areaStyle: {
+        opacity: 0.08,
+        color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: lineColor }, { offset: 1, color: 'rgba(0,0,0,0)' }] }
+      }
     })
-  } else if (recoveryIdx > 0) {
-    // 有回撤且已修复：红→绿→黄→红 四段
-    series.push(mkSeries(yVals, 0, peakIdx, RED, true))
-    series.push(mkSeries(yVals, peakIdx, troughIdx, GREEN, true))
-    series.push(mkSeries(yVals, troughIdx, recoveryIdx, YELLOW, false))
-    if (recoveryIdx < yVals.length - 1) {
-      series.push(mkSeries(yVals, recoveryIdx, yVals.length - 1, RED, true))
-    }
-  } else {
-    // 有回撤但未修复：红→绿→黄（到末尾）
-    series.push(mkSeries(yVals, 0, peakIdx, RED, true))
-    series.push(mkSeries(yVals, peakIdx, troughIdx, GREEN, true))
-    series.push(mkSeries(yVals, troughIdx, yVals.length - 1, YELLOW, false))
-  }
-
-  // 修复区域背景 + 标注
-  if (maxDd > 0 && peakIdx < troughIdx) {
-    const recoveryEndIdx = recoveryIdx > 0 ? recoveryIdx : yVals.length - 1
-    const recoveryDays = recoveryIdx > 0 ? recoveryIdx - troughIdx : null
-    // 在黄色段 series 上添加 markArea（修复区域背景）和 markPoint（标注）
-    const yellowSeries = recoveryIdx > 0 ? series[2] : series[series.length - 1]
-
-    // 修复区域半透明背景 + 顶部标注
-    const labelText = recoveryIdx > 0 ? '✓ 已修复 ' + recoveryDays + '天' : '修复中'
-    const labelColor = recoveryIdx > 0 ? '#22c45e' : YELLOW
-    yellowSeries.markArea = {
-      silent: true,
-      data: [[
-        {
-          xAxis: xCats[troughIdx],
-          itemStyle: { color: 'rgba(245, 166, 35, 0.10)' },
-          label: {
-            show: true,
-            position: 'insideTop',
-            formatter: labelText,
-            color: labelColor,
-            fontSize: 10,
-            fontWeight: 600,
-            padding: [4, 0, 0, 0]
-          }
-        },
-        { xAxis: xCats[recoveryEndIdx] }
-      ]]
-    }
   }
 
   const opts = _chartOption(xCats, RED, 'category')
   opts.xAxis.data = xCats
   opts.series = series
 
-  // 左右区间边界虚线
-  addRangeMarkers(opts)
+  // 累计收益率：y 轴格式化为百分比
+  if (isGrandTotal) {
+    opts.yAxis.axisLabel = {
+      color: '#4e527a', fontSize: 10,
+      formatter: v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%'
+    }
+  }
+
+  // 单位净值时叠加成本线和高/低位区标注
+  if (dtype === 'netWorth') {
+    addRangeMarkers(opts)
+  }
 
   // 右侧 y 轴：百分比涨跌（相对第一个数据点）
   const baseNav = yVals[0]
-  if (baseNav > 0) {
+  if (!isGrandTotal && baseNav !== 0) {
     const leftAxis = opts.yAxis
     opts.yAxis = [
       leftAxis,
@@ -1063,7 +1171,6 @@ function renderTrendChart() {
         splitLine: { show: false }
       }
     ]
-    // 添加一个隐藏 series 绑定右轴，驱动右轴渲染
     opts.series.push({
       type: 'line', symbol: 'none', yAxisIndex: 1,
       data: yVals,
@@ -1129,15 +1236,17 @@ function addRangeMarkers(opts) {
       }]
     : []
 
-  // 高位区（止盈）分割线：使用波段信号的三分法阈值
-  // highThreshold = histMaxDD * 0.33, 对应净值 = histPeak * (1 + t1/100)
+  // 高位区（止盈）/ 低位区（抄底）分割线 + 半透明背景
+  // highThreshold = histMaxDD * 0.33, lowThreshold = histMaxDD * 0.66
   const fullData = _fullTrendData.value
+  const markAreaData = []
   if (fullData && fullData.length >= 60) {
     const fullVals = fullData.map(d => d[1])
     const histPeak = Math.max(...fullVals)
     const histMaxDD = bandSignal.value?.histMaxDD
     if (histMaxDD != null && histMaxDD < 0) {
-      const highLineNav = histPeak * (1 + histMaxDD * 0.33 / 100)  // t1 阈值对应的净值
+      // 高位区(止盈)线 + 背景
+      const highLineNav = histPeak * (1 + histMaxDD * 0.33 / 100)
       if (highLineNav > 0 && maxV >= highLineNav * 0.95 && minV <= highLineNav * 1.05) {
         costData.push({
           yAxis: highLineNav,
@@ -1148,12 +1257,44 @@ function addRangeMarkers(opts) {
             color: '#22c45e', fontSize: 10, fontWeight: 500
           }
         })
+        // 高位区半透明背景（线上方到图表顶部）
+        markAreaData.push([
+          { yAxis: highLineNav, itemStyle: { color: 'rgba(34,196,94,0.06)' } },
+          { yAxis: maxV * 1.05 }
+        ])
+      }
+
+      // 低位区(抄底)线 + 背景
+      const lowLineNav = histPeak * (1 + histMaxDD * 0.66 / 100)
+      if (lowLineNav > 0 && maxV >= lowLineNav * 0.95 && minV <= lowLineNav * 1.05) {
+        costData.push({
+          yAxis: lowLineNav,
+          lineStyle: { color: '#f04040', type: 'dashed', width: 1, dashArray: [6, 4] },
+          label: {
+            show: true, position: 'insideEndBottom',
+            formatter: '低位区(抄底)',
+            color: '#f04040', fontSize: 10, fontWeight: 500
+          }
+        })
+        // 低位区半透明背景（线下方到图表底部）
+        markAreaData.push([
+          { yAxis: minV * 0.95, itemStyle: { color: 'rgba(240,64,64,0.06)' } },
+          { yAxis: lowLineNav }
+        ])
       }
     }
   }
 
-  if (opts.series && opts.series.length > 0 && costData.length) {
-    opts.series[0].markLine = { symbol: 'none', silent: true, data: costData }
+  if (opts.series && opts.series.length > 0) {
+    if (costData.length) {
+      opts.series[0].markLine = { symbol: 'none', silent: true, data: costData }
+    }
+    if (markAreaData.length) {
+      opts.series[0].markArea = Object.assign(opts.series[0].markArea || {}, {
+        silent: true,
+        data: [...(opts.series[0].markArea?.data || []), ...markAreaData]
+      })
+    }
   }
 }
 
@@ -1239,13 +1380,42 @@ function _chartOption(vals, color, xType) {
     tooltip: {
       trigger: 'axis', backgroundColor: 'rgba(24,27,46,0.95)', borderColor: '#272b48',
       textStyle: { color: '#e6e8f4', fontSize: 12 },
+      axisPointer: {
+        type: 'cross',
+        lineStyle: { color: 'rgba(255,255,255,0.25)', type: 'dashed', width: 1 },
+        crossStyle: { color: 'rgba(255,255,255,0.25)', type: 'dashed', width: 1 },
+        label: {
+          backgroundColor: 'rgba(24,27,46,0.9)',
+          color: '#e6e8f4', fontSize: 10, padding: [4, 6]
+        }
+      },
       formatter: xType === 'category' ? (p) => {
         // 过滤掉 null 值的 series，只取有值的点
         const validPt = p.find(pt => pt.value != null && pt.value !== null)
         if (!validPt) return ''
-        const dLabel = validPt.name || ''
+        // 从原始数据取时间戳，展示完整日期 YYYY-MM-DD
+        const trendData = _trendCache.value?.data
+        let dLabel = validPt.name || ''
+        if (trendData && trendData[validPt.dataIndex]) {
+          const dt = new Date(trendData[validPt.dataIndex][0])
+          if (!isNaN(dt.getTime())) {
+            dLabel = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0')
+          }
+        }
         const v = validPt.value
-        return `${dLabel}<br/>净值：${v.toFixed(4)}`
+        const dtype = trendDataType.value
+        if (dtype === 'grandTotal') {
+          return `${dLabel}<br/>累计收益率：${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
+        }
+        const valLabel = dtype === 'acWorth' ? '累计净值' : '净值'
+        // 计算相对第一个数据点的涨跌幅
+        const baseVal = trendData && trendData[0] ? trendData[0][1] : null
+        let pctStr = ''
+        if (baseVal != null && baseVal > 0) {
+          const pct = ((v - baseVal) / baseVal * 100)
+          pctStr = `<br/>涨跌：${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
+        }
+        return `${dLabel}<br/>${valLabel}：${v.toFixed(4)}${pctStr}`
       } : (p) => {
         const pt = p[0]
         const d = new Date(pt.value[0])
@@ -1256,7 +1426,22 @@ function _chartOption(vals, color, xType) {
       type: 'category', boundaryGap: false,
       axisLine: { lineStyle: { color: '#272b48' } }, axisTick: { show: false },
       axisLabel: { color: '#4e527a', fontSize: 10, interval: Math.ceil(vals.length / 8) },
-      splitLine: { show: false }
+      splitLine: { show: false },
+      axisPointer: {
+        label: {
+          // x 轴十字光标标签显示完整日期
+          formatter(params) {
+            const trendData = _trendCache.value?.data
+            if (trendData && trendData[params.seriesData?.[0]?.dataIndex]) {
+              const dt = new Date(trendData[params.seriesData[0].dataIndex][0])
+              if (!isNaN(dt.getTime())) {
+                return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0')
+              }
+            }
+            return params.value
+          }
+        }
+      }
     },
     yAxis: {
       type: 'value', scale: true,
@@ -1590,6 +1775,32 @@ function buildSuggestLogicHtml({ rTotal, rToday, fmtP }) {
 .fd-period-btn.active {
   color: var(--accent);
   background: rgba(99, 102, 241, 0.15);
+  font-weight: 600;
+}
+
+/* ══════ Data Type Tabs ══════ */
+.fd-dtype-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+.fd-dtype-btn {
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+.fd-dtype-btn:hover { color: var(--text-primary); }
+.fd-dtype-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
   font-weight: 600;
 }
 
