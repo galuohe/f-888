@@ -3,23 +3,18 @@
     <div class="fd-main">
       <!-- ═══ 左侧：统计 + 图表 ═══ -->
       <div class="fd-left">
-        <!-- Tab 栏 + 区间开关 -->
-        <div class="fd-tab-bar">
-          <button class="fd-tab" :class="{ active: activeTab === 'trend' }" @click="switchTab('trend')">净值走势</button>
-          <button class="fd-tab" :class="{ active: activeTab === 'intraday' }" @click="switchTab('intraday')">分时估值</button>
+        <!-- 数据类型 Tab 栏（含分时估值） -->
+        <div class="fd-dtype-tabs">
+          <button class="fd-dtype-btn" :class="{ active: activeTab === 'trend' && trendDataType === 'netWorth' }" @click="switchDataType('netWorth')">单位净值</button>
+          <button class="fd-dtype-btn" :class="{ active: activeTab === 'trend' && trendDataType === 'acWorth' }" @click="switchDataType('acWorth')">累计净值</button>
+          <button class="fd-dtype-btn" :class="{ active: activeTab === 'trend' && trendDataType === 'grandTotal' }" @click="switchDataType('grandTotal')">累计收益率</button>
+          <button class="fd-dtype-btn" :class="{ active: activeTab === 'intraday' }" @click="switchTab('intraday')">分时估值</button>
           <div v-if="activeTab === 'trend'" class="fd-range-toggle" @click="toggleRangeMode">
             <span class="fd-range-toggle-label">区间</span>
             <div class="fd-toggle-switch" :class="{ on: rangeEnabled }">
               <div class="fd-toggle-knob"></div>
             </div>
           </div>
-        </div>
-
-        <!-- 数据类型切换 -->
-        <div v-if="activeTab === 'trend'" class="fd-dtype-tabs">
-          <button class="fd-dtype-btn" :class="{ active: trendDataType === 'netWorth' }" @click="switchDataType('netWorth')">单位净值</button>
-          <button class="fd-dtype-btn" :class="{ active: trendDataType === 'acWorth' }" @click="switchDataType('acWorth')">累计净值</button>
-          <button class="fd-dtype-btn" :class="{ active: trendDataType === 'grandTotal' }" @click="switchDataType('grandTotal')">累计收益率</button>
         </div>
 
         <!-- 回撤修复天数 -->
@@ -888,6 +883,16 @@ function switchTab(tab) {
 }
 
 function switchDataType(dtype) {
+  // 从分时估值切回趋势图时
+  if (activeTab.value !== 'trend') {
+    activeTab.value = 'trend'
+    trendDataType.value = dtype
+    setTimeout(() => {
+      _buildTrendCache()
+      renderTrendChart()
+    }, 30)
+    return
+  }
   if (trendDataType.value === dtype) return
   trendDataType.value = dtype
   _buildTrendCache()
@@ -1781,10 +1786,14 @@ function buildSuggestLogicHtml({ rTotal, rToday, fmtP }) {
 /* ══════ Data Type Tabs ══════ */
 .fd-dtype-tabs {
   display: flex;
+  align-items: center;
   gap: 0;
   margin-bottom: 6px;
   border-bottom: 1px solid var(--border);
   padding-bottom: 4px;
+}
+.fd-dtype-tabs .fd-range-toggle {
+  margin-left: auto;
 }
 .fd-dtype-btn {
   padding: 3px 12px;

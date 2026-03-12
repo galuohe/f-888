@@ -22,6 +22,6 @@ const tabs = [
   { id: 3, label: '盈亏日历' },
   { id: 4, label: '基金大盘' },
   { id: 5, label: '板块行情' },
-  { id: 6, label: '市场全景' },
+  { id: 6, label: '热门主题' },
 ]
 </script>
