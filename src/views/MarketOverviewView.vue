@@ -1,509 +1,568 @@
 <template>
-  <div class="mo-view">
-    <!-- ═══ 标题 ═══ -->
-    <div class="mo-header">
-      <span class="mo-title">📊 市场全景</span>
-    </div>
-
-    <!-- ═══ 全球核心指数 ═══ -->
-    <div class="mo-section">
-      <div class="mo-section-header">
-        <span class="mo-section-icon">📈</span>
-        <span class="mo-section-title">全球核心指数 (实时)</span>
-        <button class="mo-refresh-btn" :disabled="loading" @click="loadData">
-          <span v-if="loading" class="spinner"></span>
-          <span v-else>↻</span>
-        </button>
+  <div class="zt-view">
+    <!-- 筛选栏 -->
+    <div class="zt-filters">
+      <div class="zt-filter-row">
+        <span class="zt-filter-label">板块类别：</span>
+        <button v-for="c in categoryOptions" :key="c.value"
+          class="zt-chip" :class="{ active: category === c.value }"
+          @click="category = c.value; expandedCode = null; fetchData()">{{ c.label }}</button>
       </div>
-      <div class="mo-indices-grid">
-        <div
-          v-for="idx in data.indices"
-          :key="idx.code"
-          class="mo-index-card"
-          :class="idx.changePercent >= 0 ? 'card-up' : 'card-down'"
-        >
-          <div class="mo-index-name">{{ idx.name }}</div>
-          <div class="mo-index-value">{{ fmtVal(idx.value) }}</div>
-          <div class="mo-index-change" :class="idx.changePercent >= 0 ? 'profit' : 'loss'">
-            {{ idx.changePercent >= 0 ? '+' : '' }}{{ idx.changePercent.toFixed(2) }}%
-          </div>
-        </div>
+      <div class="zt-filter-row">
+        <span class="zt-filter-label">阶段：</span>
+        <button v-for="p in periodOptions" :key="p.value"
+          class="zt-chip" :class="{ active: period === p.value }"
+          @click="period = p.value; expandedCode = null; fetchData()">{{ p.label }}</button>
       </div>
     </div>
 
-    <!-- ═══ 板块风向标 ═══ -->
-    <div v-if="data.sectors" class="mo-section">
-      <div class="mo-section-header">
-        <span class="mo-section-icon">🧭</span>
-        <span class="mo-section-title">板块风向标</span>
-      </div>
-      <div class="mo-sector-wrap">
-        <!-- 领涨 -->
-        <div class="mo-sector-card sector-up">
-          <div class="mo-sector-card-header">
-            <span class="mo-sector-tag tag-up">领涨板块 (Top 5)</span>
-            <span class="mo-sector-arrow">📈</span>
-          </div>
-          <div
-            v-for="(s, i) in data.sectors.top"
-            :key="s.name"
-            class="mo-sector-row"
-          >
-            <span class="mo-sector-rank" :class="'r' + (i + 1)">{{ i + 1 }}</span>
-            <span class="mo-sector-name">{{ s.name }}</span>
-            <span class="mo-sector-pct profit">+{{ s.changePercent.toFixed(2) }}%</span>
-          </div>
-        </div>
-        <!-- 领跌 -->
-        <div class="mo-sector-card sector-down">
-          <div class="mo-sector-card-header">
-            <span class="mo-sector-tag tag-down">领跌板块 (Top 5)</span>
-            <span class="mo-sector-arrow">📉</span>
-          </div>
-          <div
-            v-for="(s, i) in data.sectors.bottom"
-            :key="s.name"
-            class="mo-sector-row"
-          >
-            <span class="mo-sector-rank" :class="'r' + (i + 1)">{{ i + 1 }}</span>
-            <span class="mo-sector-name">{{ truncate(s.name, 6) }}</span>
-            <span class="mo-sector-pct loss">{{ s.changePercent.toFixed(2) }}%</span>
-          </div>
-        </div>
-      </div>
-      <div class="mo-source">数据来源：同花顺行业一览表</div>
+    <!-- 加载 -->
+    <div v-if="loading && !items.length" class="zt-loading">
+      <span class="spinner"></span>&nbsp;加载中…
     </div>
 
-    <!-- ═══ 昨日公布涨跌榜 ═══ -->
-    <div v-if="data.fundRankings" class="mo-section">
-      <div class="mo-section-header">
-        <span class="mo-section-icon">🏆</span>
-        <span class="mo-section-title">昨日公布涨跌榜 (Top 20)</span>
-        <div class="mo-rank-tabs">
-          <button
-            class="mo-rank-tab"
-            :class="{ active: rankTab === 'gainers' }"
-            @click="rankTab = 'gainers'"
-          >涨幅榜</button>
-          <button
-            class="mo-rank-tab"
-            :class="{ active: rankTab === 'losers' }"
-            @click="rankTab = 'losers'"
-          >跌幅榜</button>
-        </div>
-      </div>
-
-      <!-- 排行表头 -->
-      <div class="mo-rank-header">
-        <span class="mo-rank-col-no">排名</span>
-        <span class="mo-rank-col-name">基金名称</span>
-        <span class="mo-rank-col-chg">涨跌幅</span>
-      </div>
-
-      <!-- 排行列表 -->
-      <div class="mo-rank-list">
-        <div
-          v-for="(f, i) in currentRankList"
-          :key="f.code"
-          class="mo-rank-row"
-        >
-          <span class="mo-rank-no" :class="rankNoClass(i + 1)">{{ i + 1 }}</span>
-          <div class="mo-rank-info">
-            <div class="mo-rank-name">{{ f.name }}</div>
-            <div class="mo-rank-code">{{ f.code }}</div>
-          </div>
-          <span
-            class="mo-rank-chg"
-            :class="f.changePercent >= 0 ? 'profit' : 'loss'"
-          >
-            {{ f.changePercent >= 0 ? '+' : '' }}{{ fmtPct(f.changePercent) }}%
-          </span>
-          <button class="mo-add-btn" @click.stop="handleAdd(f)" :title="isInPortfolio(f.code) ? '已持有' : '添加到自选'">
-            <span v-if="isInPortfolio(f.code)">✓</span>
-            <span v-else>⊕</span>
-          </button>
-        </div>
+    <!-- 主题网格 -->
+    <div v-if="items.length" class="zt-grid">
+      <div
+        v-for="item in items" :key="item.code"
+        class="zt-card"
+        :class="[item.ret >= 0 ? 'up' : 'down', { expanded: expandedCode === item.code }]"
+        @click="toggleExpand(item.code)"
+      >
+        <div class="zt-card-name">{{ item.name }}</div>
+        <div class="zt-card-ret">{{ item.ret >= 0 ? '+' : '' }}{{ item.ret.toFixed(2) }}%</div>
       </div>
     </div>
 
-    <!-- Loading / Error -->
-    <div v-if="loading && !data.indices.length" class="mo-empty">
-      <span class="spinner"></span> 加载中…
+    <!-- 展开详情面板 -->
+    <div v-if="expandedCode" class="zt-detail">
+      <div v-if="detailLoading" class="zt-loading" style="padding:20px 0">
+        <span class="spinner"></span>&nbsp;加载中…
+      </div>
+      <template v-else>
+        <!-- 板块名称 -->
+        <div class="zt-detail-title">{{ detailInfo.SEC_NAME || expandedName }}</div>
+
+        <!-- 各阶段涨跌幅 -->
+        <div class="zt-metrics">
+          <div v-for="m in metricFields" :key="m.key" class="zt-metric-card">
+            <div class="zt-metric-label">{{ m.label }}</div>
+            <div class="zt-metric-value" :class="detailVal(m.key) >= 0 ? 'up' : 'down'">
+              {{ fmtPct(detailVal(m.key)) }}
+            </div>
+            <div class="zt-metric-rank" v-if="detailRank(m.rankKey, m.scKey)">
+              排名：{{ detailRank(m.rankKey, m.scKey) }}
+            </div>
+          </div>
+        </div>
+
+        <!-- 关联基金 -->
+        <div class="zt-funds-header">主题基金（{{ relFunds.length }}）</div>
+        <div v-if="relFunds.length" class="zt-funds-scroll">
+          <table class="zt-funds-table">
+            <thead>
+              <tr>
+                <th class="sticky-col">基金名称</th>
+                <th>净值</th>
+                <th>日增长率</th>
+                <th>类型</th>
+                <th>近1周</th>
+                <th>近1月</th>
+                <th>近3月</th>
+                <th>近6月</th>
+                <th>今年来</th>
+                <th>近1年</th>
+                <th>成立来</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="f in relFunds" :key="f.FCODE">
+                <td class="sticky-col">
+                  <div class="fund-name">{{ f.SHORTNAME }}</div>
+                  <div class="fund-code">{{ f.FCODE }}</div>
+                </td>
+                <td>{{ f.DWJZ }}</td>
+                <td :class="colorClass(f.RZDF)">{{ fmtPct(f.RZDF) }}</td>
+                <td class="fund-type">{{ f.FTYPE }}</td>
+                <td :class="colorClass(f.SYL_Z)">{{ fmtRate(f.SYL_Z) }}</td>
+                <td :class="colorClass(f.SYL_Y)">{{ fmtRate(f.SYL_Y) }}</td>
+                <td :class="colorClass(f.SYL_3Y)">{{ fmtRate(f.SYL_3Y) }}</td>
+                <td :class="colorClass(f.SYL_6Y)">{{ fmtRate(f.SYL_6Y) }}</td>
+                <td :class="colorClass(f.SYL_JN)">{{ fmtRate(f.SYL_JN) }}</td>
+                <td :class="colorClass(f.SYL_1N)">{{ fmtRate(f.SYL_1N) }}</td>
+                <td :class="colorClass(f.SYL_LN)">{{ fmtRate(f.SYL_LN) }}</td>
+                <td class="action-col">
+                  <span v-if="isInFunds(f.FCODE)" class="zt-action muted">已持仓</span>
+                  <span v-else-if="isInWatch(f.FCODE)" class="zt-action muted">已监控</span>
+                  <span v-else class="zt-action add" @click="addToWatch(f)">添加监控</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-else class="zt-loading" style="padding:16px 0">暂无关联基金</div>
+      </template>
     </div>
-    <div v-if="error" class="mo-empty mo-error">{{ error }}</div>
+
+    <!-- 空 -->
+    <div v-else-if="!loading && !items.length" class="zt-loading">暂无数据</div>
+
+    <!-- 底部统计 -->
+    <div v-if="items.length" class="zt-footer">
+      共 {{ items.length }} 个主题
+      <span v-if="upCount">&nbsp;·&nbsp;<span style="color:var(--loss)">{{ upCount }} 涨</span></span>
+      <span v-if="downCount">&nbsp;·&nbsp;<span style="color:var(--profit)">{{ downCount }} 跌</span></span>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { fetchMarketOverview } from '@/services/marketApi'
 import { useFundStore } from '@/stores/fundStore'
 import { useWatchStore } from '@/stores/watchStore'
-import { fetchOne } from '@/services/fundApi'
 
-const props = defineProps({
-  active: { type: Boolean, default: false }
-})
+const props = defineProps({ active: Boolean })
 
 const fundStore = useFundStore()
 const watchStore = useWatchStore()
 
+const categoryOptions = [
+  { value: '0', label: '全部' },
+  { value: '001002', label: '行业' },
+  { value: '001003', label: '概念' },
+]
+const periodOptions = [
+  { value: 'D', label: '实时' },
+  { value: 'W', label: '近1周' },
+  { value: 'M', label: '近1月' },
+  { value: 'Q', label: '近3月' },
+  { value: 'Y', label: '近1年' },
+  { value: 'SY', label: '今年来' },
+]
+const metricFields = [
+  { key: 'D', label: '日涨幅', rankKey: null, scKey: null },
+  { key: 'W', label: '近1周', rankKey: 'RANKW', scKey: 'WSC' },
+  { key: 'M', label: '近1月', rankKey: 'RANKM', scKey: 'MSC' },
+  { key: 'Q', label: '近3月', rankKey: 'RANKQ', scKey: 'QSC' },
+  { key: 'Y', label: '近1年', rankKey: 'RANKY', scKey: 'YSC' },
+  { key: 'SY', label: '今年来', rankKey: 'RANKSY', scKey: 'SYSC' },
+]
+
+const category = ref('0')
+const period = ref('D')
+const items = ref([])
 const loading = ref(false)
-const error = ref(null)
-const data = ref({ indices: [], sectors: null, fundRankings: null })
-const rankTab = ref('gainers')
-let _loaded = false
 
-const currentRankList = computed(() => {
-  if (!data.value.fundRankings) return []
-  return rankTab.value === 'gainers'
-    ? data.value.fundRankings.gainers
-    : data.value.fundRankings.losers
-})
+// 展开相关
+const expandedCode = ref(null)
+const expandedName = ref('')
+const detailInfo = ref({})
+const relFunds = ref([])
+const detailLoading = ref(false)
 
-watch(() => props.active, (val) => {
-  if (val && !_loaded) loadData()
-})
+let _seq = 0
 
-async function loadData() {
+const upCount = computed(() => items.value.filter(i => i.ret >= 0).length)
+const downCount = computed(() => items.value.filter(i => i.ret < 0).length)
+
+/* ---------- 列表接口 ---------- */
+function fetchData() {
   loading.value = true
-  error.value = null
-  try {
-    const res = await fetchMarketOverview()
-    data.value = res
-    _loaded = true
-  } catch (e) {
-    error.value = '数据加载失败: ' + e.message
-  } finally {
-    loading.value = false
+  const seq = ++_seq
+  const cbName = '_ztjj_cb_' + Date.now() + '_' + seq
+
+  const cleanup = () => {
+    delete window[cbName]
+    const s = document.getElementById(cbName)
+    if (s) s.remove()
   }
+
+  const timeout = setTimeout(() => {
+    cleanup()
+    if (seq === _seq) loading.value = false
+  }, 15000)
+
+  window[cbName] = (resp) => {
+    clearTimeout(timeout)
+    cleanup()
+    if (seq !== _seq) return
+    loading.value = false
+    if (resp && resp.Data) {
+      const field = period.value
+      items.value = resp.Data
+        .filter(d => d[field] != null)
+        .sort((a, b) => b[field] - a[field])
+        .map(d => ({ code: d.INDEXCODE, name: d.INDEXNAME, ret: d[field] }))
+    }
+  }
+
+  const script = document.createElement('script')
+  script.id = cbName
+  script.src = `https://api.fund.eastmoney.com//ztjj/GetZTJJListNew?callback=${cbName}&tt=${category.value}&dt=syl&st=${period.value}&_=${Date.now()}`
+  script.onerror = () => {
+    clearTimeout(timeout)
+    cleanup()
+    if (seq === _seq) loading.value = false
+  }
+  document.head.appendChild(script)
 }
 
-function fmtVal(v) {
-  if (v == null) return '--'
-  return v >= 10000 ? v.toFixed(2) : v < 100 ? v.toFixed(2) : v.toFixed(2)
+/* ---------- JSONP 通用工具 ---------- */
+function jsonp(url) {
+  return new Promise((resolve, reject) => {
+    const cbName = '_ztjj_d_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+    const fullUrl = url + (url.includes('?') ? '&' : '?') + `callback=${cbName}&_=${Date.now()}`
+
+    const cleanup = () => {
+      delete window[cbName]
+      const s = document.getElementById(cbName)
+      if (s) s.remove()
+    }
+
+    const tid = setTimeout(() => { cleanup(); reject(new Error('timeout')) }, 12000)
+
+    window[cbName] = (resp) => {
+      clearTimeout(tid)
+      cleanup()
+      resolve(resp)
+    }
+
+    const script = document.createElement('script')
+    script.id = cbName
+    script.src = fullUrl
+    script.onerror = () => { clearTimeout(tid); cleanup(); reject(new Error('load error')) }
+    document.head.appendChild(script)
+  })
+}
+
+/* ---------- 展开/收起 ---------- */
+function toggleExpand(code) {
+  if (expandedCode.value === code) {
+    expandedCode.value = null
+    return
+  }
+  expandedCode.value = code
+  expandedName.value = items.value.find(i => i.code === code)?.name || ''
+  detailInfo.value = {}
+  relFunds.value = []
+  detailLoading.value = true
+
+  Promise.all([
+    jsonp(`https://api.fund.eastmoney.com/ZTJJ/GetBKDetailInfoNew?tp=${code}`),
+    jsonp(`https://api.fund.eastmoney.com/ZTJJ/GetBKRelTopicFundNew?sort=undefined&sorttype=DESC&pageindex=1&pagesize=10&tp=${code}&isbuy=1`),
+  ]).then(([detailResp, fundsResp]) => {
+    if (expandedCode.value !== code) return
+    if (detailResp && detailResp.Data && typeof detailResp.Data === 'object') {
+      detailInfo.value = detailResp.Data
+    }
+    if (fundsResp && Array.isArray(fundsResp.Data)) {
+      relFunds.value = fundsResp.Data
+    }
+    detailLoading.value = false
+  }).catch(() => {
+    if (expandedCode.value === code) detailLoading.value = false
+  })
+}
+
+/* ---------- 格式化工具 ---------- */
+function detailVal(key) {
+  const v = detailInfo.value[key]
+  return v != null ? Number(v) : null
+}
+
+function detailRank(rankKey, scKey) {
+  if (!rankKey) return ''
+  const r = detailInfo.value[rankKey]
+  const s = detailInfo.value[scKey]
+  if (r == null) return ''
+  return s ? `${Math.round(r)}/${Math.round(s)}` : Math.round(r)
 }
 
 function fmtPct(v) {
-  if (v == null) return '--'
-  const abs = Math.abs(v)
-  return abs === Math.floor(abs) ? abs.toFixed(0) : abs.toFixed(2)
+  if (v == null || v === '') return '---'
+  const n = Number(v)
+  if (isNaN(n)) return '---'
+  return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'
 }
 
-function truncate(s, len) {
-  return s && s.length > len ? s.slice(0, len) + '…' : s
+function fmtRate(v) {
+  if (v == null || v === '') return '---'
+  const n = Number(v)
+  if (isNaN(n)) return '---'
+  return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'
 }
 
-function rankNoClass(n) {
-  if (n === 1) return 'r1'
-  if (n === 2) return 'r2'
-  if (n === 3) return 'r3'
-  return ''
+function colorClass(v) {
+  if (v == null || v === '') return ''
+  const n = Number(v)
+  if (isNaN(n)) return ''
+  return n >= 0 ? 'up' : 'down'
 }
 
-function isInPortfolio(code) {
-  return fundStore.funds.some(f => f.code === code) ||
-    watchStore.watchlist.some(w => w.code === code)
+/* ---------- 添加监控 ---------- */
+function isInFunds(code) {
+  return fundStore.funds.some(f => f.code === code)
 }
 
-async function handleAdd(f) {
-  if (isInPortfolio(f.code)) return
-  watchStore.addWatch({ code: f.code, name: f.name, tag: null })
-  window.$toast?.('已添加到自选: ' + f.name, 'success')
-  // 立即获取实时数据填充
-  try {
-    const d = await fetchOne(f.code)
-    const patch = {}
-    if (d.name) patch.name = d.name
-    if (d.dwjz) patch.prevNav = parseFloat(d.dwjz)
-    if (d.gsz) patch.gsz = parseFloat(d.gsz)
-    if (d.gszzl !== undefined) patch.gszzl = parseFloat(d.gszzl)
-    if (d.gztime) patch.gztime = d.gztime
-    if (d.jzrq) patch.jzrq = d.jzrq
-    watchStore.updateWatch(f.code, patch)
+function isInWatch(code) {
+  return watchStore.watchlist.some(w => w.code === code)
+}
+
+function addToWatch(f) {
+  const code = f.FCODE
+  const name = f.SHORTNAME || code
+  const added = watchStore.addWatch({ code, name, tags: expandedName.value ? [expandedName.value] : [] })
+  if (!added) return
+
+  // 用已有数据预填充
+  const navNum = parseFloat(f.DWJZ)
+  const retNum = parseFloat(f.RZDF)
+  if (!isNaN(navNum) && navNum > 0) {
+    const patch = { confirmedNav: navNum, confirmedDate: f.SYRQ }
+    if (!isNaN(retNum)) {
+      patch.gszzl = retNum
+      patch.prevNav = parseFloat((navNum / (1 + retNum / 100)).toFixed(4))
+    }
+    watchStore.updateWatch(code, patch)
     watchStore.save()
-  } catch (_) {}
+  }
+
+  window.$toast?.(`已添加监控：${name}`, 'success')
+  fundStore.refreshAll(watchStore)
 }
+
+// 切到该 tab 时自动加载
+watch(() => props.active, (v) => {
+  if (v && !items.value.length) fetchData()
+}, { immediate: true })
 </script>
 
 <style scoped>
-.mo-view {
+.zt-view {
   padding: 12px 0;
 }
-
-/* ══════ Header ══════ */
-.mo-header {
-  padding: 0 16px 10px;
+.zt-filters {
+  margin-bottom: 14px;
 }
-.mo-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-/* ══════ Section ══════ */
-.mo-section {
-  margin-bottom: 16px;
-}
-.mo-section-header {
+.zt-filter-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-}
-.mo-section-icon { font-size: 14px; }
-.mo-section-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.mo-refresh-btn {
-  margin-left: auto;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-muted);
-  font-size: 14px;
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.mo-refresh-btn:hover { color: var(--accent); border-color: var(--accent); }
-.mo-refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-/* ══════ 指数网格 ══════ */
-.mo-indices-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  padding: 0 16px;
-}
-.mo-index-card {
-  padding: 10px 12px;
-  border-radius: 8px;
-  text-align: center;
-  border: 1px solid rgba(255,255,255,0.06);
-  transition: all 0.15s;
-}
-.mo-index-card.card-up {
-  background: rgba(240, 64, 64, 0.06);
-  border-color: rgba(240, 64, 64, 0.15);
-}
-.mo-index-card.card-down {
-  background: rgba(34, 196, 94, 0.06);
-  border-color: rgba(34, 196, 94, 0.15);
-}
-.mo-index-name {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-bottom: 4px;
-}
-.mo-index-value {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-primary);
-  line-height: 1.3;
-}
-.mo-index-change {
-  font-size: 12px;
-  font-weight: 600;
-  margin-top: 2px;
-}
-
-/* ══════ 板块风向标 ══════ */
-.mo-sector-wrap {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  padding: 0 16px;
-}
-.mo-sector-card {
-  border-radius: 10px;
-  padding: 10px 12px;
-  border: 1px solid;
-}
-.mo-sector-card.sector-up {
-  background: rgba(240, 64, 64, 0.04);
-  border-color: rgba(240, 64, 64, 0.2);
-}
-.mo-sector-card.sector-down {
-  background: rgba(34, 196, 94, 0.04);
-  border-color: rgba(34, 196, 94, 0.2);
-}
-.mo-sector-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  gap: 4px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
 }
-.mo-sector-tag {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-.mo-sector-tag.tag-up {
-  background: rgba(240, 64, 64, 0.15);
-  color: var(--profit);
-}
-.mo-sector-tag.tag-down {
-  background: rgba(34, 196, 94, 0.15);
-  color: var(--loss);
-}
-.mo-sector-arrow { font-size: 14px; opacity: 0.6; }
-.mo-sector-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 0;
+.zt-filter-label {
   font-size: 12px;
-}
-.mo-sector-rank {
-  width: 16px;
-  text-align: center;
-  font-weight: 600;
-  font-size: 11px;
   color: var(--text-muted);
   flex-shrink: 0;
+  width: 60px;
 }
-.mo-sector-rank.r1 { color: #ffd700; }
-.mo-sector-rank.r2 { color: #c0c0c0; }
-.mo-sector-rank.r3 { color: #cd7f32; }
-.mo-sector-name {
-  flex: 1;
-  min-width: 0;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.mo-sector-pct {
-  font-weight: 600;
-  flex-shrink: 0;
-  min-width: 55px;
-  text-align: right;
-}
-.mo-source {
-  text-align: center;
-  font-size: 10px;
-  color: var(--text-muted);
-  opacity: 0.6;
-  padding: 6px 0 0;
-}
-
-/* ══════ 涨跌榜 ══════ */
-.mo-rank-tabs {
-  margin-left: auto;
-  display: flex;
-  gap: 0;
-  background: rgba(255,255,255,0.06);
-  border-radius: 6px;
-  overflow: hidden;
-}
-.mo-rank-tab {
-  padding: 4px 14px;
+.zt-chip {
+  padding: 3px 12px;
   font-size: 12px;
-  font-weight: 600;
-  border: none;
+  font-weight: 500;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
   background: none;
-  color: var(--text-muted);
   cursor: pointer;
+  border-radius: 4px;
   transition: all 0.15s;
 }
-.mo-rank-tab.active {
-  background: var(--accent);
-  color: #fff;
-  border-radius: 5px;
-}
-.mo-rank-header {
-  display: flex;
-  align-items: center;
-  padding: 6px 16px;
-  font-size: 10px;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
-  margin: 0 16px;
-}
-.mo-rank-col-no { width: 36px; text-align: center; }
-.mo-rank-col-name { flex: 1; }
-.mo-rank-col-chg { width: 80px; text-align: right; }
-
-.mo-rank-list {
-  padding: 0 16px;
-}
-.mo-rank-row {
-  display: flex;
-  align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
-}
-.mo-rank-row:last-child { border-bottom: none; }
-.mo-rank-no {
-  width: 36px;
-  text-align: center;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-.mo-rank-no.r1 { color: #ffd700; }
-.mo-rank-no.r2 { color: #c0c0c0; }
-.mo-rank-no.r3 { color: #cd7f32; }
-.mo-rank-info {
-  flex: 1;
-  min-width: 0;
-}
-.mo-rank-name {
-  font-size: 13px;
+.zt-chip:hover { color: var(--text-primary); border-color: var(--text-muted); }
+.zt-chip.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, 0.12);
   font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.4;
 }
-.mo-rank-code {
-  font-size: 10px;
-  color: var(--text-muted);
-  line-height: 1.4;
-}
-.mo-rank-chg {
-  width: 70px;
-  text-align: right;
-  font-size: 13px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-.mo-add-btn {
-  margin-left: 8px;
-  background: none;
-  border: none;
-  font-size: 16px;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 2px 4px;
-  opacity: 0.6;
-  transition: opacity 0.15s;
-  flex-shrink: 0;
-}
-.mo-add-btn:hover { opacity: 1; color: var(--accent); }
-
-/* ══════ Shared ══════ */
-.profit { color: var(--profit); }
-.loss { color: var(--loss); }
-.mo-empty {
+.zt-loading {
   text-align: center;
   padding: 40px 0;
   color: var(--text-muted);
   font-size: 13px;
+}
+.zt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 6px;
+}
+.zt-card {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  padding: 12px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.15s;
 }
-.mo-error { color: var(--loss); }
+.zt-card:hover {
+  border-color: var(--text-muted);
+}
+.zt-card.expanded {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.zt-card.up {
+  background: rgba(240, 64, 64, 0.06);
+  border-color: rgba(240, 64, 64, 0.15);
+}
+.zt-card.down {
+  background: rgba(34, 196, 94, 0.06);
+  border-color: rgba(34, 196, 94, 0.15);
+}
+.zt-card.up .zt-card-name { color: var(--profit); }
+.zt-card.down .zt-card-name { color: var(--loss); }
+.zt-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: center;
+  line-height: 1.3;
+  margin-bottom: 4px;
+}
+.zt-card-ret {
+  font-size: 14px;
+  font-weight: 700;
+}
+.zt-card.up .zt-card-ret { color: var(--profit); }
+.zt-card.down .zt-card-ret { color: var(--loss); }
+
+/* ---- 展开详情面板 ---- */
+.zt-detail {
+  margin-top: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card, #fff);
+}
+.zt-detail-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+/* 指标卡片行 */
+.zt-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.zt-metric-card {
+  text-align: center;
+  padding: 8px 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.zt-metric-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.zt-metric-value {
+  font-size: 14px;
+  font-weight: 700;
+}
+.zt-metric-value.up { color: var(--profit); }
+.zt-metric-value.down { color: var(--loss); }
+.zt-metric-rank {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* 基金列表 */
+.zt-funds-header {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.zt-funds-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.zt-funds-table {
+  width: 100%;
+  min-width: 700px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.zt-funds-table th,
+.zt-funds-table td {
+  padding: 6px 8px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+.zt-funds-table th {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 11px;
+  position: sticky;
+  top: 0;
+  background: var(--bg-card, #fff);
+}
+.zt-funds-table th.sticky-col,
+.zt-funds-table td.sticky-col {
+  text-align: left;
+  position: sticky;
+  left: 0;
+  background: var(--bg-card, #fff);
+  z-index: 1;
+}
+.zt-funds-table td.up { color: var(--profit); }
+.zt-funds-table td.down { color: var(--loss); }
+.fund-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 12px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fund-code {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.fund-type {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* 操作列 */
+.action-col {
+  text-align: center !important;
+}
+.zt-action {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.zt-action.muted {
+  color: var(--text-muted);
+}
+.zt-action.add {
+  color: var(--accent);
+  cursor: pointer;
+  border: 1px solid var(--accent);
+}
+.zt-action.add:hover {
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.zt-footer {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+}
 </style>
