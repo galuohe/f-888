@@ -166,26 +166,39 @@ let _seq = 0
 const upCount = computed(() => items.value.filter(i => i.ret >= 0).length)
 const downCount = computed(() => items.value.filter(i => i.ret < 0).length)
 
+/* ---------- 通用请求（开发用 JSONP，生产用 CORS 代理） ---------- */
+const IS_DEV = import.meta.env.DEV
+
+function ztFetch(url) {
+  if (IS_DEV) return _jsonpFetch(url)
+  // 生产环境：通过 corsproxy.io 代理，去掉 callback 参数用普通 JSON
+  const cleanUrl = url.replace(/([?&])callback=[^&]*&?/, '$1').replace(/[?&]$/, '')
+  const target = cleanUrl + (cleanUrl.includes('?') ? '&' : '?') + '_=' + Date.now()
+  return fetch(`https://corsproxy.io/?${encodeURIComponent(target)}`)
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.json() })
+}
+
+function _jsonpFetch(url) {
+  return new Promise((resolve, reject) => {
+    const cbName = '_ztjj_d_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+    const fullUrl = url + (url.includes('?') ? '&' : '?') + `callback=${cbName}&_=${Date.now()}`
+    const cleanup = () => { delete window[cbName]; const s = document.getElementById(cbName); if (s) s.remove() }
+    const tid = setTimeout(() => { cleanup(); reject(new Error('timeout')) }, 12000)
+    window[cbName] = (resp) => { clearTimeout(tid); cleanup(); resolve(resp) }
+    const script = document.createElement('script')
+    script.id = cbName; script.src = fullUrl
+    script.onerror = () => { clearTimeout(tid); cleanup(); reject(new Error('load error')) }
+    document.head.appendChild(script)
+  })
+}
+
 /* ---------- 列表接口 ---------- */
 function fetchData() {
   loading.value = true
   const seq = ++_seq
-  const cbName = '_ztjj_cb_' + Date.now() + '_' + seq
+  const url = `https://api.fund.eastmoney.com//ztjj/GetZTJJListNew?tt=${category.value}&dt=syl&st=${period.value}`
 
-  const cleanup = () => {
-    delete window[cbName]
-    const s = document.getElementById(cbName)
-    if (s) s.remove()
-  }
-
-  const timeout = setTimeout(() => {
-    cleanup()
-    if (seq === _seq) loading.value = false
-  }, 15000)
-
-  window[cbName] = (resp) => {
-    clearTimeout(timeout)
-    cleanup()
+  ztFetch(url).then(resp => {
     if (seq !== _seq) return
     loading.value = false
     if (resp && resp.Data) {
@@ -195,44 +208,8 @@ function fetchData() {
         .sort((a, b) => b[field] - a[field])
         .map(d => ({ code: d.INDEXCODE, name: d.INDEXNAME, ret: d[field] }))
     }
-  }
-
-  const script = document.createElement('script')
-  script.id = cbName
-  script.src = `https://api.fund.eastmoney.com//ztjj/GetZTJJListNew?callback=${cbName}&tt=${category.value}&dt=syl&st=${period.value}&_=${Date.now()}`
-  script.onerror = () => {
-    clearTimeout(timeout)
-    cleanup()
+  }).catch(() => {
     if (seq === _seq) loading.value = false
-  }
-  document.head.appendChild(script)
-}
-
-/* ---------- JSONP 通用工具 ---------- */
-function jsonp(url) {
-  return new Promise((resolve, reject) => {
-    const cbName = '_ztjj_d_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
-    const fullUrl = url + (url.includes('?') ? '&' : '?') + `callback=${cbName}&_=${Date.now()}`
-
-    const cleanup = () => {
-      delete window[cbName]
-      const s = document.getElementById(cbName)
-      if (s) s.remove()
-    }
-
-    const tid = setTimeout(() => { cleanup(); reject(new Error('timeout')) }, 12000)
-
-    window[cbName] = (resp) => {
-      clearTimeout(tid)
-      cleanup()
-      resolve(resp)
-    }
-
-    const script = document.createElement('script')
-    script.id = cbName
-    script.src = fullUrl
-    script.onerror = () => { clearTimeout(tid); cleanup(); reject(new Error('load error')) }
-    document.head.appendChild(script)
   })
 }
 
@@ -249,8 +226,8 @@ function toggleExpand(code) {
   detailLoading.value = true
 
   Promise.all([
-    jsonp(`https://api.fund.eastmoney.com/ZTJJ/GetBKDetailInfoNew?tp=${code}`),
-    jsonp(`https://api.fund.eastmoney.com/ZTJJ/GetBKRelTopicFundNew?sort=undefined&sorttype=DESC&pageindex=1&pagesize=10&tp=${code}&isbuy=1`),
+    ztFetch(`https://api.fund.eastmoney.com/ZTJJ/GetBKDetailInfoNew?tp=${code}`),
+    ztFetch(`https://api.fund.eastmoney.com/ZTJJ/GetBKRelTopicFundNew?sort=undefined&sorttype=DESC&pageindex=1&pagesize=10&tp=${code}&isbuy=1`),
   ]).then(([detailResp, fundsResp]) => {
     if (expandedCode.value !== code) return
     if (detailResp && detailResp.Data && typeof detailResp.Data === 'object') {
