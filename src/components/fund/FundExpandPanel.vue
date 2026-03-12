@@ -415,6 +415,7 @@ const activeTab = ref('trend')
 const trendEl = ref(null)
 const intradayEl = ref(null)
 const _charts = {}
+let _resizeOb = null
 let _dragTarget = null  // 'left' | 'right' | null
 const _trendCache = ref(null)
 let _intradayCache = null
@@ -860,7 +861,10 @@ onMounted(() => {
     }
   }, 100)
 })
-onUnmounted(() => { Object.values(_charts).forEach(c => { try { c.dispose() } catch {} }) })
+onUnmounted(() => {
+  if (_resizeOb) { _resizeOb.disconnect(); _resizeOb = null }
+  Object.values(_charts).forEach(c => { try { c.dispose() } catch {} })
+})
 
 watch(() => props.code, () => {
   Object.keys(_charts).forEach(k => { try { _charts[k].dispose() } catch {}; delete _charts[k] })
@@ -1062,6 +1066,14 @@ function renderTrendChart() {
   const el = trendEl.value; if (!el || !_trendCache.value) return
   el.innerHTML = ''; if (_charts.trend) { try { _charts.trend.dispose() } catch {} }
   _charts.trend = echarts.init(el)
+
+  // 监听容器尺寸变化，自动 resize 图表（解决首次展开时宽度未稳定的问题）
+  if (!_resizeOb) {
+    _resizeOb = new ResizeObserver(() => {
+      Object.values(_charts).forEach(c => { try { c.resize() } catch {} })
+    })
+    _resizeOb.observe(el)
+  }
 
   const { data, peakIdx, troughIdx, maxDd, maxV, minV } = _trendCache.value
   const RED = '#f04040', GREEN = '#22c45e', YELLOW = '#f5a623'
