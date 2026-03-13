@@ -699,4 +699,11 @@ async function pickWatchFund(r) {
 .result-item:hover { background: rgba(99, 102, 241, 0.12); }
 .result-code { font-size: 12px; color: var(--text-muted); min-width: 52px; font-family: monospace; }
 .result-name { font-size: 13px; color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Mobile: 768px ── */
+@media (max-width: 768px) {
+  .group-tabs { gap: 4px; padding: 6px 0; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .group-tabs::-webkit-scrollbar { display: none; }
+  .group-tab { padding: 3px 10px; font-size: 11px; flex-shrink: 0; }
+}
 </style>

@@ -542,4 +542,28 @@ watch(() => props.active, (v) => {
   color: var(--text-muted);
   text-align: center;
 }
+
+/* ── Mobile: 768px ── */
+@media (max-width: 768px) {
+  .zt-filter-row { gap: 3px; }
+  .zt-filter-label { font-size: 11px; width: 52px; }
+  .zt-chip { padding: 3px 8px; font-size: 11px; }
+
+  .zt-grid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 4px; }
+  .zt-card { padding: 8px 4px; border-radius: 5px; }
+  .zt-card-name { font-size: 11px; }
+  .zt-card-ret { font-size: 12px; }
+
+  .zt-detail { padding: 10px; }
+  .zt-detail-title { font-size: 14px; margin-bottom: 8px; }
+  .zt-metrics { grid-template-columns: repeat(3, 1fr); gap: 4px; }
+  .zt-metric-card { padding: 6px 3px; }
+  .zt-metric-label { font-size: 10px; }
+  .zt-metric-value { font-size: 12px; }
+  .zt-metric-rank { font-size: 9px; }
+
+  .zt-funds-table { min-width: 560px; font-size: 11px; }
+  .zt-funds-table th, .zt-funds-table td { padding: 5px 5px; }
+  .fund-name { max-width: 100px; font-size: 11px; }
+}
 </style>

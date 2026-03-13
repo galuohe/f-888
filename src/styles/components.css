@@ -450,11 +450,67 @@ tbody td {
   .add-form .btn { grid-column: span 2; }
   .summary-grid { grid-template-columns: repeat(2, 1fr); }
 }
-@media (max-width: 560px) {
-  header { flex-direction: column; gap: 16px; }
+
+/* ── Mobile: 768px ── */
+@media (max-width: 768px) {
+  /* Header */
+  header { flex-direction: column; gap: 10px; margin-bottom: 12px; padding-bottom: 12px; }
   .header-right { text-align: left; }
-  .add-form { grid-template-columns: 1fr; }
+  .logo-icon { width: 36px; height: 36px; border-radius: 10px; }
+  .logo-icon svg { width: 20px; height: 20px; }
+  .logo-text h1 { font-size: 18px; }
+  #sticky-top { padding-top: 12px; margin-top: -12px; padding-bottom: 10px; }
+
+  /* Tab bar — 横向滚动 */
+  .tab-bar { width: 100%; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; flex-shrink: 0; }
+  .tab-bar::-webkit-scrollbar { display: none; }
+  .tab-btn { padding: 7px 16px; font-size: 13px; white-space: nowrap; flex-shrink: 0; }
+
+  /* Section cards */
+  .card { padding: 14px 12px; border-radius: 12px; }
+  .section-title { font-size: 12px; margin-bottom: 12px; }
+
+  /* Summary grid */
+  .summary-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .summary-item { padding: 12px 10px; border-radius: 10px; }
+  .summary-value { font-size: 20px; }
+  .summary-label { font-size: 11px; }
+
+  /* Add form */
+  .add-form { grid-template-columns: 1fr; gap: 8px; }
   .add-form .btn { grid-column: span 1; }
+
+  /* Table */
+  .table-wrapper { border-radius: 10px; margin-bottom: 10px; }
+  table { min-width: 580px; }
+  th { padding: 8px 8px; font-size: 10px; }
+  td { padding: 10px 8px; font-size: 12px; }
+  .two-line-cell .primary { font-size: 13px; }
+  .two-line-cell .secondary { font-size: 10px; }
+
+  /* MarketRank rows */
+  .mr-row { gap: 8px; padding: 10px 0; }
+  .mr-no { width: 24px; height: 24px; font-size: 11px; border-radius: 6px; }
+  .mr-info .mr-name { font-size: 13px; }
+  .mr-val { font-size: 14px; }
+
+  /* Calendar */
+  .cal-table { border-spacing: 2px; }
+  .cal-table th { font-size: 10px; padding: 4px 2px; }
+  .cal-cell { min-width: 40px; padding: 6px 2px; border-radius: 6px; }
+  .cal-val { font-size: 11px; }
+  .cal-day { font-size: 10px; }
+
+  /* Modal */
+  .modal-box { width: calc(100vw - 24px); max-width: 400px; border-radius: 14px; }
+  .modal-header { padding: 16px 16px 12px; }
+  .modal-header h3 { font-size: 15px; }
+  .modal-body { padding: 12px 16px; }
+  .modal-footer { padding: 12px 16px 16px; }
+}
+
+@media (max-width: 560px) {
+  .summary-grid { grid-template-columns: repeat(2, 1fr); }
 }
 .nav-hint {
   font-size: 12px; color: var(--text-muted);

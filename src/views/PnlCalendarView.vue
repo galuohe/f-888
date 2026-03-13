@@ -558,4 +558,14 @@ function handleClear() {
 .loss   { color: var(--loss); }
 .neutral { color: var(--text-muted); }
 .muted  { color: var(--text-muted); }
+
+/* ── Mobile: 768px ── */
+@media (max-width: 768px) {
+  .monthly-summary { font-size: 11px; gap: 4px; padding: 4px 8px 8px; flex-wrap: wrap; justify-content: center; }
+  .calendar-wrapper { padding: 0 2px; }
+  .cal-th { font-size: 10px; padding: 4px 0; }
+  .cal-cell { height: 48px; padding: 4px 2px 2px; border-radius: 4px; }
+  .cal-day { font-size: 10px; }
+  .cal-val { font-size: 10px; }
+}
 </style>

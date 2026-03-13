@@ -2171,4 +2171,47 @@ function buildSuggestLogicHtml({ rTotal, rToday, fmtP }) {
   color: var(--text-muted);
   line-height: 1.5;
 }
+
+/* ── Mobile: 768px ── */
+@media (max-width: 768px) {
+  .fd-panel { padding: 10px 8px; }
+
+  /* 左右布局改为上下堆叠 */
+  .fd-main { flex-direction: column; }
+  .fd-left { padding-right: 0; }
+  .fd-right { border-left: none; padding-left: 0; border-top: 1px solid var(--border); padding-top: 10px; margin-top: 8px; max-height: 240px; overflow-y: auto; }
+
+  /* 图表区域固定高度 */
+  .fd-chart-wrap { min-height: 200px; max-height: 240px; }
+
+  /* Tabs 缩小 */
+  .fd-dtype-tabs { gap: 2px; flex-wrap: wrap; }
+  .fd-dtype-btn { font-size: 11px; padding: 3px 8px; }
+  .fd-period-tabs { gap: 2px; }
+  .fd-period-btn { font-size: 11px; padding: 3px 8px; }
+
+  /* Stats 行 */
+  .fd-stats-row { flex-wrap: wrap; gap: 4px; }
+  .fd-stat { padding: 4px 6px; }
+  .fd-stat-label { font-size: 9px; }
+  .fd-stat-val { font-size: 12px; }
+
+  /* Recovery 行 */
+  .fd-recovery-row { flex-wrap: wrap; gap: 4px; }
+  .fd-recovery-cell { padding: 4px 8px; }
+  .fd-recovery-label { font-size: 9px; }
+  .fd-recovery-val { font-size: 12px; }
+
+  /* Tech 指标网格 */
+  .fd-tech-grid { grid-template-columns: repeat(2, 1fr); }
+  .fd-tech-val { font-size: 13px; }
+
+  /* 重仓股列表 */
+  .fd-h-header { font-size: 10px; padding: 4px 6px; }
+  .fd-hi { padding: 5px 6px; font-size: 11px; }
+
+  /* Band 信号区 */
+  .fd-band { padding: 10px; }
+  .fd-band-grid { grid-template-columns: repeat(2, 1fr); }
+}
 </style>

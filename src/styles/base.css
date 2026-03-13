@@ -15,3 +15,7 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
 
 .container { max-width: 1440px; margin: 0 auto; }
+
+@media (max-width: 768px) {
+  body { padding: 12px 8px 32px; }
+}
