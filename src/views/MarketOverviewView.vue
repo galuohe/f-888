@@ -166,16 +166,16 @@ let _seq = 0
 const upCount = computed(() => items.value.filter(i => i.ret >= 0).length)
 const downCount = computed(() => items.value.filter(i => i.ret < 0).length)
 
-/* ---------- 通用请求（开发用 JSONP，生产用 CORS 代理） ---------- */
+/* ---------- 通用请求（开发用 JSONP，生产用 Cloudflare Worker 代理） ---------- */
 const IS_DEV = import.meta.env.DEV
+const WORKER_BASE = 'https://cold-block-3400.eastmoney-proxy.workers.dev'
 
 function ztFetch(url) {
   if (IS_DEV) return _jsonpFetch(url)
-  // 生产环境：通过 corsproxy.io 代理，去掉 callback 参数用普通 JSON
-  const cleanUrl = url.replace(/([?&])callback=[^&]*&?/, '$1').replace(/[?&]$/, '')
-  const target = cleanUrl + (cleanUrl.includes('?') ? '&' : '?') + '_=' + Date.now()
-  return fetch(`https://corsproxy.io/?${encodeURIComponent(target)}`)
-    .then(r => { if (!r.ok) throw new Error(r.status); return r.json() })
+  // 生产环境：通过 Cloudflare Worker 代理
+  const u = new URL(url)
+  const proxyUrl = `${WORKER_BASE}${u.pathname}${u.search}${u.search ? '&' : '?'}_=${Date.now()}`
+  return fetch(proxyUrl).then(r => { if (!r.ok) throw new Error(r.status); return r.json() })
 }
 
 function _jsonpFetch(url) {
