@@ -196,7 +196,7 @@ function _jsonpFetch(url) {
 function fetchData() {
   loading.value = true
   const seq = ++_seq
-  const url = `https://api.fund.eastmoney.com//ztjj/GetZTJJListNew?tt=${category.value}&dt=syl&st=${period.value}`
+  const url = `https://api.fund.eastmoney.com/ZTJJ/GetZTJJListNew?tt=${category.value}&dt=syl&st=${period.value}`
 
   ztFetch(url).then(resp => {
     if (seq !== _seq) return
