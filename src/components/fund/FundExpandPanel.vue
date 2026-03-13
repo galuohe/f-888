@@ -8,7 +8,8 @@
           <button class="fd-dtype-btn" :class="{ active: activeTab === 'trend' && trendDataType === 'netWorth' }" @click="switchDataType('netWorth')">单位净值</button>
           <button class="fd-dtype-btn" :class="{ active: activeTab === 'trend' && trendDataType === 'acWorth' }" @click="switchDataType('acWorth')">累计净值</button>
           <button class="fd-dtype-btn" :class="{ active: activeTab === 'trend' && trendDataType === 'grandTotal' }" @click="switchDataType('grandTotal')">累计收益率</button>
-          <button class="fd-dtype-btn" :class="{ active: activeTab === 'intraday' }" @click="switchTab('intraday')">分时估值</button>
+          <!-- 分时估值暂时隐藏：腾讯财经接口已停更，数据不准确 -->
+          <!-- <button class="fd-dtype-btn" :class="{ active: activeTab === 'intraday' }" @click="switchTab('intraday')">分时估值</button> -->
           <div v-if="activeTab === 'trend'" class="fd-range-toggle" @click="toggleRangeMode">
             <span class="fd-range-toggle-label">区间</span>
             <div class="fd-toggle-switch" :class="{ on: rangeEnabled }">
