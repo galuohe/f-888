@@ -27,6 +27,7 @@
         v-for="item in items" :key="item.code"
         class="zt-card"
         :class="[item.ret >= 0 ? 'up' : 'down', { expanded: expandedCode === item.code }]"
+        :style="cardStyle(item.ret)"
         @click="toggleExpand(item.code)"
       >
         <div class="zt-card-name">{{ item.name }}</div>
@@ -165,6 +166,21 @@ let _seq = 0
 
 const upCount = computed(() => items.value.filter(i => i.ret >= 0).length)
 const downCount = computed(() => items.value.filter(i => i.ret < 0).length)
+const maxAbsRet = computed(() => Math.max(...items.value.map(i => Math.abs(i.ret)), 1))
+
+function cardStyle(ret) {
+  // sqrt 映射放大小幅涨跌的差异，透明度范围 0.03~0.45
+  const ratio = Math.sqrt(Math.min(Math.abs(ret) / maxAbsRet.value, 1))
+  const bgAlpha = (0.03 + ratio * 0.42).toFixed(3)
+  const borderAlpha = (0.08 + ratio * 0.52).toFixed(3)
+  const textAlpha = (0.45 + ratio * 0.55).toFixed(3)
+  const rgb = ret >= 0 ? '240,64,64' : '34,196,94'
+  return {
+    background: `rgba(${rgb},${bgAlpha})`,
+    borderColor: `rgba(${rgb},${borderAlpha})`,
+    '--card-text': `rgba(${rgb},${textAlpha})`
+  }
+}
 
 /* ---------- 通用请求（开发用 JSONP，生产用 Cloudflare Worker 代理） ---------- */
 const IS_DEV = import.meta.env.DEV
@@ -382,16 +398,8 @@ watch(() => props.active, (v) => {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
 }
-.zt-card.up {
-  background: rgba(240, 64, 64, 0.06);
-  border-color: rgba(240, 64, 64, 0.15);
-}
-.zt-card.down {
-  background: rgba(34, 196, 94, 0.06);
-  border-color: rgba(34, 196, 94, 0.15);
-}
-.zt-card.up .zt-card-name { color: var(--profit); }
-.zt-card.down .zt-card-name { color: var(--loss); }
+/* up/down 背景和边框由 inline style 动态设置（根据涨跌幅深浅） */
+.zt-card .zt-card-name { color: var(--card-text, var(--text-primary)); }
 .zt-card-name {
   font-size: 13px;
   font-weight: 600;
@@ -404,8 +412,7 @@ watch(() => props.active, (v) => {
   font-size: 14px;
   font-weight: 700;
 }
-.zt-card.up .zt-card-ret { color: var(--profit); }
-.zt-card.down .zt-card-ret { color: var(--loss); }
+.zt-card .zt-card-ret { color: var(--card-text, var(--text-primary)); }
 
 /* ---- 展开详情面板 ---- */
 .zt-detail {
