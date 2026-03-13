@@ -59,11 +59,29 @@ export function getPool() {
   return Object.entries(codeToSector).map(([code, sector]) => ({ code, sector }))
 }
 
+// ── localStorage 持久缓存 ──
+const LS_KEY = 'mr_items_cache'
+
+function _readLsCache() {
+  try {
+    const raw = localStorage.getItem(LS_KEY)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch { return null }
+}
+
+function _writeLsCache(items) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({ t: Date.now(), items }))
+  } catch { /* quota exceeded */ }
+}
+
 // ── Module-level shared cache (survives component unmount/remount) ──
 const _items     = ref([])   // { code, name, nav, ret, jzrq, confirmed, sector }
 const _isLoading = ref(false)
 const _lastRefresh = ref(null)
 let   _cacheTime = 0
+let   _lsRestored = false
 
 function _isWeekend() {
   const d = new Date().getDay()
@@ -189,6 +207,18 @@ export function useMarketData() {
    * @param {Function} [onStatus] - optional callback(msg: string) for progress messages
    */
   async function load(force = false, onStatus) {
+    // 首次加载时，先从 localStorage 恢复缓存立即渲染
+    if (!_lsRestored && _items.value.length === 0) {
+      _lsRestored = true
+      const cached = _readLsCache()
+      if (cached && cached.items && cached.items.length) {
+        _items.value = cached.items
+        _cacheTime = cached.t || 0
+        _lastRefresh.value = cached.t ? new Date(cached.t) : null
+        window._mrCache = cached.items
+      }
+    }
+
     // Cache validity check
     if (!force && _items.value.length > 0) {
       const age = Date.now() - _cacheTime
@@ -228,7 +258,8 @@ export function useMarketData() {
       _items.value = results
       _cacheTime   = Date.now()
       _lastRefresh.value = new Date()
-      window._mrCache = results  // 供 AI 助手读取板块行情
+      window._mrCache = results
+      _writeLsCache(results)
 
       // ── Stage 2: fetchPingzhongdata for confirmed NAVs after 18:00 or weekends ──
       // 只对 Stage 1 未确认（confirmed !== true）的基金发请求，减少重复网络请求
@@ -265,7 +296,8 @@ export function useMarketData() {
           _items.value = results
           _cacheTime   = Date.now()
           _lastRefresh.value = new Date()
-          window._mrCache = results  // 更新 AI 助手缓存
+          window._mrCache = results
+          _writeLsCache(results)
         }
 
         const confirmedCount = pzdResults.filter(r => r.jzrq === todayStr).length
@@ -284,10 +316,9 @@ export function useMarketData() {
     }
   }
 
-  /** Force-clear cache and reload */
+  /** Force-clear cache and reload (保留旧数据边看边刷新) */
   function forceReload(onStatus) {
     _cacheTime = 0
-    _items.value = []
     return load(true, onStatus)
   }
 
