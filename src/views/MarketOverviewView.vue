@@ -9,8 +9,14 @@
           @click="category = c.value; expandedCode = null; fetchData()">{{ c.label }}</button>
       </div>
       <div class="zt-filter-row">
+        <span class="zt-filter-label">数据类型：</span>
+        <button v-for="dt in dataTypeOptions" :key="dt.value"
+          class="zt-chip" :class="{ active: dataType === dt.value }"
+          @click="dataType = dt.value; period = activePeriodOptions[0].value; expandedCode = null; fetchData()">{{ dt.label }}</button>
+      </div>
+      <div class="zt-filter-row">
         <span class="zt-filter-label">阶段：</span>
-        <button v-for="p in periodOptions" :key="p.value"
+        <button v-for="p in activePeriodOptions" :key="p.value"
           class="zt-chip" :class="{ active: period === p.value }"
           @click="period = p.value; expandedCode = null; fetchData()">{{ p.label }}</button>
       </div>
@@ -31,7 +37,7 @@
         @click="toggleExpand(item.code)"
       >
         <div class="zt-card-name">{{ item.name }}</div>
-        <div class="zt-card-ret">{{ item.ret >= 0 ? '+' : '' }}{{ item.ret.toFixed(2) }}%</div>
+        <div class="zt-card-ret">{{ fmtCardValue(item.ret) }}</div>
       </div>
     </div>
 
@@ -79,8 +85,10 @@
             </thead>
             <tbody>
               <tr v-for="f in relFunds" :key="f.FCODE">
-                <td class="sticky-col">
-                  <div class="fund-name">{{ f.SHORTNAME }}</div>
+                <td class="sticky-col"
+                  @mouseenter="showTip($event, f.SHORTNAME)"
+                  @mouseleave="hideTip">
+                  <div class="fund-name">{{ truncName(f.SHORTNAME) }}</div>
                   <div class="fund-code">{{ f.FCODE }}</div>
                 </td>
                 <td>{{ f.DWJZ }}</td>
@@ -112,9 +120,22 @@
     <!-- 底部统计 -->
     <div v-if="items.length" class="zt-footer">
       共 {{ items.length }} 个主题
-      <span v-if="upCount">&nbsp;·&nbsp;<span style="color:var(--loss)">{{ upCount }} 涨</span></span>
-      <span v-if="downCount">&nbsp;·&nbsp;<span style="color:var(--profit)">{{ downCount }} 跌</span></span>
+      <template v-if="dataType === 'zjlr'">
+        <span v-if="upCount">&nbsp;·&nbsp;<span style="color:var(--loss)">{{ upCount }} 流入</span></span>
+        <span v-if="downCount">&nbsp;·&nbsp;<span style="color:var(--profit)">{{ downCount }} 流出</span></span>
+      </template>
+      <template v-else>
+        <span v-if="upCount">&nbsp;·&nbsp;<span style="color:var(--loss)">{{ upCount }} 涨</span></span>
+        <span v-if="downCount">&nbsp;·&nbsp;<span style="color:var(--profit)">{{ downCount }} 跌</span></span>
+      </template>
     </div>
+
+    <!-- Tooltip: Teleport 到 body 避免 overflow 裁剪 -->
+    <Teleport to="body">
+      <transition name="tip-fade">
+        <div v-if="tip.show" class="zt-tooltip" :style="tipStyle">{{ tip.text }}</div>
+      </transition>
+    </Teleport>
   </div>
 </template>
 
@@ -133,7 +154,11 @@ const categoryOptions = [
   { value: '001002', label: '行业' },
   { value: '001003', label: '概念' },
 ]
-const periodOptions = [
+const dataTypeOptions = [
+  { value: 'syl', label: '涨跌幅' },
+  { value: 'zjlr', label: '资金流入' },
+]
+const sylPeriodOptions = [
   { value: 'D', label: '实时' },
   { value: 'W', label: '近1周' },
   { value: 'M', label: '近1月' },
@@ -141,6 +166,13 @@ const periodOptions = [
   { value: 'Y', label: '近1年' },
   { value: 'SY', label: '今年来' },
 ]
+const zjlrPeriodOptions = [
+  { value: 'FLOW', label: '实时' },
+  { value: 'FLOW_W', label: '近1周' },
+  { value: 'FLOW_M', label: '近1月' },
+  { value: 'FLOW_Q', label: '近3月' },
+]
+const activePeriodOptions = computed(() => dataType.value === 'zjlr' ? zjlrPeriodOptions : sylPeriodOptions)
 const metricFields = [
   { key: 'D', label: '日涨幅', rankKey: null, scKey: null },
   { key: 'W', label: '近1周', rankKey: 'RANKW', scKey: 'WSC' },
@@ -151,6 +183,7 @@ const metricFields = [
 ]
 
 const category = ref('0')
+const dataType = ref('syl')
 const period = ref('D')
 const items = ref([])
 const loading = ref(false)
@@ -180,6 +213,16 @@ function cardStyle(ret) {
     borderColor: `rgba(${rgb},${borderAlpha})`,
     '--card-text': `rgba(${rgb},${textAlpha})`
   }
+}
+
+function fmtCardValue(ret) {
+  if (dataType.value === 'zjlr') {
+    // 资金流入以亿为单位
+    const yi = ret / 1e8
+    const sign = yi >= 0 ? '+' : ''
+    return sign + yi.toFixed(2) + '亿'
+  }
+  return (ret >= 0 ? '+' : '') + ret.toFixed(2) + '%'
 }
 
 /* ---------- 通用请求（开发用 JSONP，生产用 Cloudflare Worker 代理） ---------- */
@@ -212,13 +255,15 @@ function _jsonpFetch(url) {
 function fetchData() {
   loading.value = true
   const seq = ++_seq
-  const url = `https://api.fund.eastmoney.com/ZTJJ/GetZTJJListNew?tt=${category.value}&dt=syl&st=${period.value}`
+  const dt = dataType.value
+  const st = period.value
+  const url = `https://api.fund.eastmoney.com/ZTJJ/GetZTJJListNew?tt=${category.value}&dt=${dt}&st=${st}`
 
   ztFetch(url).then(resp => {
     if (seq !== _seq) return
     loading.value = false
     if (resp && resp.Data) {
-      const field = period.value
+      const field = st
       items.value = resp.Data
         .filter(d => d[field] != null)
         .sort((a, b) => b[field] - a[field])
@@ -323,6 +368,28 @@ function addToWatch(f) {
 
   window.$toast?.(`已添加监控：${name}`, 'success')
   fundStore.refreshAll(watchStore)
+}
+
+/* ---------- 名称截断 & Tooltip ---------- */
+const NAME_MAX = 10
+function truncName(name) {
+  if (!name) return ''
+  return name.length > NAME_MAX ? name.slice(0, NAME_MAX) + '…' : name
+}
+
+const tip = ref({ show: false, text: '', x: 0, y: 0 })
+const tipStyle = computed(() => ({
+  position: 'fixed',
+  left: tip.value.x + 'px',
+  top: tip.value.y + 'px',
+}))
+function showTip(e, text) {
+  if (!text || text.length <= NAME_MAX) return
+  const rect = e.currentTarget.getBoundingClientRect()
+  tip.value = { show: true, text, x: rect.left, y: rect.top - 36 }
+}
+function hideTip() {
+  tip.value = { ...tip.value, show: false }
 }
 
 // 切到该 tab 时自动加载
@@ -508,9 +575,6 @@ watch(() => props.active, (v) => {
   font-weight: 600;
   color: var(--text-primary);
   font-size: 12px;
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .fund-code {
   font-size: 10px;
@@ -571,6 +635,28 @@ watch(() => props.active, (v) => {
 
   .zt-funds-table { min-width: 560px; font-size: 11px; }
   .zt-funds-table th, .zt-funds-table td { padding: 5px 5px; }
-  .fund-name { max-width: 100px; font-size: 11px; }
+  .fund-name { font-size: 11px; }
 }
+</style>
+
+<!-- Teleport 到 body 的 tooltip 不受 scoped 限制 -->
+<style>
+.zt-tooltip {
+  position: fixed;
+  padding: 6px 12px;
+  background: rgba(20, 20, 35, 0.95);
+  color: #eee;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  border-radius: 6px;
+  white-space: nowrap;
+  z-index: 9999;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+.tip-fade-enter-active { transition: opacity 0.15s ease; }
+.tip-fade-leave-active { transition: opacity 0.1s ease; }
+.tip-fade-enter-from,
+.tip-fade-leave-to { opacity: 0; }
 </style>
