@@ -1,10 +1,11 @@
 /**
  * 基金净值 API (fund.eastmoney.com/Data/Fund_JJJZ_Data.aspx)
- * 开发环境走 Vite proxy；生产环境走 corsproxy.io
+ * 开发环境走 Vite proxy；生产环境走 Cloudflare Worker 代理
  * 返回格式: var db = {datas:[...], record, pages, curpage, showday:[...]}
  */
 
 const IS_DEV = import.meta.env.DEV
+const WORKER_BASE = 'https://cold-block-3400.eastmoney-proxy.workers.dev'
 
 /**
  * 基金类型映射 (lx 参数)
@@ -90,7 +91,7 @@ export async function fetchFundNav({ sortBy = 'rzdf', order = 'desc', type = 1, 
   if (IS_DEV) {
     url = `/api-nav${path}`
   } else {
-    url = `https://corsproxy.io/?${encodeURIComponent('https://fund.eastmoney.com' + path)}`
+    url = `${WORKER_BASE}/nav${path}`
   }
 
   const resp = await fetch(url)

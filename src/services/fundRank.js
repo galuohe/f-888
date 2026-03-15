@@ -1,12 +1,13 @@
 /**
  * 基金排行 API (fund.eastmoney.com/data/rankhandler.aspx)
- * 开发环境走 Vite proxy；生产环境走 corsproxy.io
+ * 开发环境走 Vite proxy；生产环境走 Cloudflare Worker 代理
  * 返回格式: var rankData = {datas:[...], allRecords, pageIndex, pageNum, allPages}
  */
 
 import { getTodayStr } from '@/utils/format'
 
 const IS_DEV = import.meta.env.DEV
+const WORKER_BASE = 'https://cold-block-3400.eastmoney-proxy.workers.dev'
 
 /**
  * 排序字段映射
@@ -103,7 +104,7 @@ export async function fetchFundRank({ sortBy = 'rzdf', order = 'desc', type = 'a
   if (IS_DEV) {
     url = `/api-rank${path}`
   } else {
-    url = `https://corsproxy.io/?${encodeURIComponent('https://fund.eastmoney.com' + path)}`
+    url = `${WORKER_BASE}/rank${path}`
   }
 
   const resp = await fetch(url)
