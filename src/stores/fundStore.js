@@ -93,6 +93,7 @@ export const useFundStore = defineStore('fund', () => {
     for (const f of allItems) {
       try {
         const data = await fetchOne(f.code)
+        if (!data || !data.fundcode) throw new Error('empty')
         if (data.name) f.name = data.name
         if (data.jzrq) f.jzrq = data.jzrq
 
@@ -157,8 +158,36 @@ export const useFundStore = defineStore('fund', () => {
         f.loading = false
         ok++
       } catch (_) {
-        f.loading = false
-        f.error = true
+        // fetchOne 失败（如 QDII 无估值），尝试 pingzhongdata 兜底
+        try {
+          const pzd = await fetchPingzhongdata(f.code)
+          const trend = pzd.data || pzd
+          if (trend && trend.length > 0) {
+            const sorted = [...trend].sort((a, b) => a.x - b.x)
+            const last = sorted[sorted.length - 1]
+            const prevItem = sorted.length >= 2 ? sorted[sorted.length - 2] : null
+            const lastDate = new Date(last.x + 8 * 3600 * 1000).toISOString().slice(0, 10)
+            if (pzd.name) f.name = pzd.name
+            f.confirmedNav = last.y
+            f.confirmedDate = lastDate
+            f.navConfirmed = lastDate === todayStr
+            if (prevItem) {
+              f.prevNav = prevItem.y
+              f.gszzl = parseFloat(((last.y - prevItem.y) / prevItem.y * 100).toFixed(4))
+            }
+            f.gsz = last.y
+            f.jzrq = lastDate
+            f.loading = false
+            f.error = false
+            ok++
+          } else {
+            f.loading = false
+            f.error = true
+          }
+        } catch (_2) {
+          f.loading = false
+          f.error = true
+        }
       }
 
       // 二次请求：获取最新确认净值
@@ -255,11 +284,15 @@ export const useFundStore = defineStore('fund', () => {
       if (dow < 1 || dow > 5) continue
 
       if (!f._lastPnlDate) {
-        // 首次：设置 baseline，不记录盈亏
         needBaseline.push(f)
       } else if (f.confirmedDate > f._lastPnlDate) {
-        // confirmedDate 比上次记录的更新，说明有新的确认净值
         toRecord.push(f)
+      } else if (f.confirmedDate === f._lastPnlDate) {
+        // 修复：_lastPnlDate 已更新但 pnlHistory 中缺少该基金记录，补录
+        const rec = pnlHistory.value[f.confirmedDate]
+        if (!rec || !rec.funds || !rec.funds.some(x => x.code === f.code)) {
+          toRecord.push(f)
+        }
       }
     }
 
@@ -273,10 +306,7 @@ export const useFundStore = defineStore('fund', () => {
 
     if (toRecord.length === 0) return
 
-    // 按日期分组，整体重算每个涉及到的日期
-    const datesToRefresh = [...new Set(toRecord.map(f => f.confirmedDate))]
-    datesToRefresh.forEach(d => { pnlHistory.value[d] = { total: 0, funds: [] } })
-
+    // 增量更新：不清空整天记录，按基金逐条更新（避免多次运行互相覆盖）
     const processedKeys = new Set()
     let recorded = false
     for (const f of toRecord) {
@@ -285,28 +315,36 @@ export const useFundStore = defineStore('fund', () => {
       if (processedKeys.has(key)) continue
       processedKeys.add(key)
 
-      let prevNAV = null
-      try {
-        const pzd = await fetchPingzhongdata(f.code)
-        const trend = pzd.data || pzd
-        if (trend && trend.length >= 2) {
-          const sorted = [...trend].sort((a, b) => a.x - b.x)
-          for (let i = 1; i < sorted.length; i++) {
-            const d = new Date(sorted[i].x + 8 * 3600 * 1000).toISOString().slice(0, 10)
-            if (d === date) { prevNAV = sorted[i - 1].y; break }
+      // 优先用基金已有的 prevNav（刷新时已计算好的前一日净值）
+      let prevNAV = (f.prevNav != null && f.prevNav > 0 && f.prevNav !== f.confirmedNav)
+        ? f.prevNav
+        : null
+      // 兜底：从 pingzhongdata 历史趋势中查找
+      if (prevNAV == null) {
+        try {
+          const pzd = await fetchPingzhongdata(f.code)
+          const trend = pzd.data || pzd
+          if (trend && trend.length >= 2) {
+            const sorted = [...trend].sort((a, b) => a.x - b.x)
+            for (let i = 1; i < sorted.length; i++) {
+              const d = new Date(sorted[i].x + 8 * 3600 * 1000).toISOString().slice(0, 10)
+              if (d === date) { prevNAV = sorted[i - 1].y; break }
+            }
           }
-        }
-      } catch (_) {}
-
-      if (prevNAV == null && f.prevNav != null && f.prevNav > 0 && f.prevNav !== f.confirmedNav) {
-        prevNAV = f.prevNav
+        } catch (_) {}
       }
-      if (prevNAV === null) continue
+      if (prevNAV == null) continue
 
       if (!pnlHistory.value[date]) pnlHistory.value[date] = { total: 0, funds: [] }
+
+      // 移除该基金的旧记录（如果有），再插入新记录
+      const rec = pnlHistory.value[date]
+      rec.funds = rec.funds.filter(x => x.code !== f.code)
+
       const profit = parseFloat((f.holdingShares * (f.confirmedNav - prevNAV)).toFixed(2))
-      pnlHistory.value[date].total = parseFloat((pnlHistory.value[date].total + profit).toFixed(2))
-      pnlHistory.value[date].funds.push({ code: f.code, name: f.name || f.code, profit })
+      rec.funds.push({ code: f.code, name: f.name || f.code, profit })
+      rec.total = parseFloat(rec.funds.reduce((s, x) => s + x.profit, 0).toFixed(2))
+
       // 更新该基金的最后记录日期
       f._lastPnlDate = date
       recorded = true

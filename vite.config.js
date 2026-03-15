@@ -11,6 +11,18 @@ export default defineConfig({
         target: 'https://baiyefundwork.preview.aliyun-zeabur.cn',
         changeOrigin: true,
         rewrite: path => path.replace(/^\/api-market/, '/api')
+      },
+      '/api-rank': {
+        target: 'https://fund.eastmoney.com',
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/api-rank/, ''),
+        headers: { Referer: 'https://fund.eastmoney.com/data/fundranking.html' }
+      },
+      '/api-nav': {
+        target: 'https://fund.eastmoney.com',
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/api-nav/, ''),
+        headers: { Referer: 'https://fund.eastmoney.com/fund.html' }
       }
     }
   },

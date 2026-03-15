@@ -15,9 +15,9 @@
       <PortfolioView v-show="activeTab === 1" />
       <WatchlistView v-show="activeTab === 2" />
       <PnlCalendarView v-show="activeTab === 3" :active="activeTab === 3" />
-      <MarketRankView v-show="activeTab === 4" :active="activeTab === 4" />
-      <SectorView v-show="activeTab === 5" :active="activeTab === 5" />
-      <MarketOverviewView v-show="activeTab === 6" :active="activeTab === 6" />
+      <MarketOverviewView v-show="activeTab === 4" :active="activeTab === 4" />
+      <FundRankView v-show="activeTab === 5" :active="activeTab === 5" />
+      <FundNavView v-show="activeTab === 6" :active="activeTab === 6" />
     </div>
 
     <!-- Toast -->
@@ -43,9 +43,9 @@ import TabBar from '@/components/layout/TabBar.vue'
 import PortfolioView from '@/views/PortfolioView.vue'
 import WatchlistView from '@/views/WatchlistView.vue'
 import PnlCalendarView from '@/views/PnlCalendarView.vue'
-import MarketRankView from '@/views/MarketRankView.vue'
-import SectorView from '@/views/SectorView.vue'
 import MarketOverviewView from '@/views/MarketOverviewView.vue'
+import FundRankView from '@/views/FundRankView.vue'
+import FundNavView from '@/views/FundNavView.vue'
 import AuthModal from '@/components/common/AuthModal.vue'
 import Toast from '@/components/common/Toast.vue'
 import AiFab from '@/components/ai/AiFab.vue'

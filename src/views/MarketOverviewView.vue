@@ -22,6 +22,13 @@
       </div>
     </div>
 
+    <!-- 刷新按钮 -->
+    <div class="zt-toolbar">
+      <button class="zt-refresh-btn" :disabled="loading" @click="fetchData()">
+        {{ loading ? '刷新中…' : '刷新数据' }}
+      </button>
+    </div>
+
     <!-- 加载 -->
     <div v-if="loading && !items.length" class="zt-loading">
       <span class="spinner"></span>&nbsp;加载中…
@@ -102,6 +109,11 @@
                 <td :class="colorClass(f.SYL_1N)">{{ fmtRate(f.SYL_1N) }}</td>
                 <td :class="colorClass(f.SYL_LN)">{{ fmtRate(f.SYL_LN) }}</td>
                 <td class="action-col">
+                  <span
+                    class="zt-action suggest-btn"
+                    :class="getQuickClass(f)"
+                    @click.stop="handleSuggest(f)"
+                  >💡 建议</span>
                   <span v-if="isInFunds(f.FCODE)" class="zt-action muted">已持仓</span>
                   <span v-else-if="isInWatch(f.FCODE)" class="zt-action muted">已监控</span>
                   <span v-else class="zt-action add" @click="addToWatch(f)">添加监控</span>
@@ -130,6 +142,9 @@
       </template>
     </div>
 
+    <!-- 建议弹窗 -->
+    <SuggestModal :modal="suggestModal" />
+
     <!-- Tooltip: Teleport 到 body 避免 overflow 裁剪 -->
     <Teleport to="body">
       <transition name="tip-fade">
@@ -143,11 +158,14 @@
 import { ref, computed, watch } from 'vue'
 import { useFundStore } from '@/stores/fundStore'
 import { useWatchStore } from '@/stores/watchStore'
+import { useFundActions } from '@/composables/useFundActions'
+import SuggestModal from '@/components/common/SuggestModal.vue'
 
 const props = defineProps({ active: Boolean })
 
 const fundStore = useFundStore()
 const watchStore = useWatchStore()
+const { suggestModal, openSuggest, quickSuggestClass } = useFundActions()
 
 const categoryOptions = [
   { value: '0', label: '全部' },
@@ -370,6 +388,32 @@ function addToWatch(f) {
   fundStore.refreshAll(watchStore)
 }
 
+/* ---------- 建议 ---------- */
+function handleSuggest(f) {
+  const sectorRets = relFunds.value
+    .filter(r => r.RZDF != null && r.RZDF !== '')
+    .map(r => Number(r.RZDF))
+  openSuggest({
+    code: f.FCODE,
+    name: f.SHORTNAME,
+    nav: f.DWJZ,
+    ret: f.RZDF,
+    sector: expandedName.value || null,
+    sectorFunds: sectorRets,
+  })
+}
+
+function getQuickClass(f) {
+  const sectorRets = relFunds.value
+    .filter(r => r.RZDF != null && r.RZDF !== '')
+    .map(r => Number(r.RZDF))
+  return quickSuggestClass({
+    ret: f.RZDF,
+    sector: expandedName.value || null,
+    sectorFunds: sectorRets,
+  })
+}
+
 /* ---------- 名称截断 & Tooltip ---------- */
 const NAME_MAX = 10
 function truncName(name) {
@@ -436,6 +480,29 @@ watch(() => props.active, (v) => {
   background: rgba(99, 102, 241, 0.12);
   font-weight: 600;
 }
+.zt-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 12px 8px;
+}
+.zt-refresh-btn {
+  padding: 4px 14px;
+  font-size: 12px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.zt-refresh-btn:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+.zt-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .zt-loading {
   text-align: center;
   padding: 40px 0;
@@ -606,6 +673,16 @@ watch(() => props.active, (v) => {
 .zt-action.add:hover {
   background: rgba(99, 102, 241, 0.12);
 }
+.suggest-btn {
+  cursor: pointer;
+  font-size: 10px !important;
+  padding: 1px 6px !important;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+.suggest-btn.buy  { color: var(--profit); border-color: var(--profit); }
+.suggest-btn.sell { color: var(--loss); border-color: var(--loss); }
+.suggest-btn.hold { color: var(--text-muted); border-color: var(--border); }
 
 .zt-footer {
   margin-top: 12px;

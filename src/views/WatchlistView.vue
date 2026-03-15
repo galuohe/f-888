@@ -413,8 +413,12 @@ const filteredWatchlist = computed(() => {
 const sortedFilteredWatchlist = computed(() => {
   const list = [...filteredWatchlist.value]
   list.sort((a, b) => {
-    const va = getDisplayChangeRate(a) ?? -Infinity
-    const vb = getDisplayChangeRate(b) ?? -Infinity
+    const va = getDisplayChangeRate(a)
+    const vb = getDisplayChangeRate(b)
+    // 无数据的始终排最后
+    if (va == null && vb == null) return 0
+    if (va == null) return 1
+    if (vb == null) return -1
     return watchStore.sortDesc ? vb - va : va - vb
   })
   return list
