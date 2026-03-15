@@ -111,9 +111,9 @@
                 <td class="action-col">
                   <span
                     class="zt-action suggest-btn"
-                    :class="getQuickClass(f)"
+                    :class="getQuickSuggest(f).cls"
                     @click.stop="handleSuggest(f)"
-                  >💡 建议</span>
+                  >{{ getQuickSuggest(f).label }}</span>
                   <span v-if="isInFunds(f.FCODE)" class="zt-action muted">已持仓</span>
                   <span v-else-if="isInWatch(f.FCODE)" class="zt-action muted">已监控</span>
                   <span v-else class="zt-action add" @click="addToWatch(f)">添加监控</span>
@@ -165,7 +165,7 @@ const props = defineProps({ active: Boolean })
 
 const fundStore = useFundStore()
 const watchStore = useWatchStore()
-const { suggestModal, openSuggest, quickSuggestClass } = useFundActions()
+const { suggestModal, openSuggest, quickSuggest } = useFundActions()
 
 const categoryOptions = [
   { value: '0', label: '全部' },
@@ -403,11 +403,11 @@ function handleSuggest(f) {
   })
 }
 
-function getQuickClass(f) {
+function getQuickSuggest(f) {
   const sectorRets = relFunds.value
     .filter(r => r.RZDF != null && r.RZDF !== '')
     .map(r => Number(r.RZDF))
-  return quickSuggestClass({
+  return quickSuggest({
     ret: f.RZDF,
     sector: expandedName.value || null,
     sectorFunds: sectorRets,
@@ -680,9 +680,12 @@ watch(() => props.active, (v) => {
   border-radius: 3px;
   border: 1px solid var(--border);
 }
-.suggest-btn.buy  { color: var(--profit); border-color: var(--profit); }
-.suggest-btn.sell { color: var(--loss); border-color: var(--loss); }
-.suggest-btn.hold { color: var(--text-muted); border-color: var(--border); }
+.suggest-btn.buy        { color: #fff; background: #22c45e; border-color: #22c45e; }
+.suggest-btn.buy-light  { color: #22c45e; border-color: #22c45e; }
+.suggest-btn.warn       { color: #fff; background: #e6a23c; border-color: #e6a23c; }
+.suggest-btn.warn-light { color: #e6a23c; border-color: #e6a23c; }
+.suggest-btn.sell       { color: #fff; background: #f04040; border-color: #f04040; }
+.suggest-btn.hold       { color: var(--text-muted); border-color: var(--border); }
 
 .zt-footer {
   margin-top: 12px;
