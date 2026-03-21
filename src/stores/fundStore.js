@@ -6,6 +6,7 @@ import { loadFunds, saveFunds, loadPnlHistory, savePnlHistory } from '@/utils/st
 import { getTodayStr } from '@/utils/format'
 import { isWeekend, isTradingHours, getAutoRefreshInterval } from '@/utils/market'
 import { useAuthStore } from './authStore'
+import { signalCache, calcTechIndicators, calcBandSignal, calcCompositeSignal } from '@/utils/signalCache'
 
 export const useFundStore = defineStore('fund', () => {
   const funds = ref([])
@@ -266,12 +267,36 @@ export const useFundStore = defineStore('fund', () => {
     isRefreshing.value = false
 
     setTimeout(() => checkAndRecordPnl(), 200)
+    // 批量计算综合信号（pingzhongdata 有 5 分钟缓存，二次请求大部分命中）
+    setTimeout(() => _batchCalcSignals(allItems), 400)
     return { ok, total: allItems.length }
   }
 
-  /** 检查并记录当日盈亏（幂等）
+  /** 批量获取历史数据并计算综合信号 */
+  async function _batchCalcSignals(items) {
+    for (const f of items) {
+      try {
+        const pzd = await fetchPingzhongdata(f.code)
+        const trend = pzd.data || pzd
+        if (!trend || trend.length < 20) continue
+
+        // 统一为 [[ts, nav]] 格式
+        const fullTrend = trend.map(d => [d.x, d.y])
+        const tech = calcTechIndicators(fullTrend)
+        const band = calcBandSignal(fullTrend)
+        // suggestInfo 仅持仓基金有，这里不传（列表层面不需要仓位建议权重）
+        const result = calcCompositeSignal(tech, band, null)
+        if (result) {
+          signalCache[f.code] = { zone: result.zone, zoneLevel: result.zoneLevel, confidence: result.confidence, composite: result.composite }
+        }
+      } catch (_) { /* 静默跳过 */ }
+    }
+  }
+
+  /** 检查并记录当日盈亏（幂等，含缺失交易日自动补录）
    *  核心逻辑：只记录 confirmedDate > _lastPnlDate 的新增确认净值
    *  新添加的基金首次刷新时仅设置 baseline（_lastPnlDate），不记录盈亏
+   *  若 _lastPnlDate 与 confirmedDate 之间有多个交易日缺口，自动用历史净值补录
    */
   async function checkAndRecordPnl() {
     // 第一步：分离"需要设置 baseline"和"需要记录盈亏"的基金
@@ -288,7 +313,6 @@ export const useFundStore = defineStore('fund', () => {
       } else if (f.confirmedDate > f._lastPnlDate) {
         toRecord.push(f)
       } else if (f.confirmedDate === f._lastPnlDate) {
-        // 修复：_lastPnlDate 已更新但 pnlHistory 中缺少该基金记录，补录
         const rec = pnlHistory.value[f.confirmedDate]
         if (!rec || !rec.funds || !rec.funds.some(x => x.code === f.code)) {
           toRecord.push(f)
@@ -306,32 +330,48 @@ export const useFundStore = defineStore('fund', () => {
 
     if (toRecord.length === 0) return
 
-    // 增量更新：不清空整天记录，按基金逐条更新（避免多次运行互相覆盖）
+    // 并行预取所有 toRecord 基金的历史净值（refreshAll 200ms 前已请求过，命中 5 分钟缓存）
+    const trendMap = new Map()
+    const uniqueCodes = [...new Set(toRecord.map(f => f.code))]
+    await Promise.all(uniqueCodes.map(async code => {
+      try {
+        const pzd = await fetchPingzhongdata(code)
+        const trend = pzd.data || pzd
+        if (trend && trend.length >= 2) {
+          trendMap.set(code, [...trend].sort((a, b) => a.x - b.x))
+        }
+      } catch (_) {}
+    }))
+
+    // 增量更新：按基金逐条处理（含 backfill + 当日记录）
     const processedKeys = new Set()
     let recorded = false
+
     for (const f of toRecord) {
       const date = f.confirmedDate
       const key = date + '_' + f.code
       if (processedKeys.has(key)) continue
       processedKeys.add(key)
 
-      // 优先用基金已有的 prevNav（刷新时已计算好的前一日净值）
+      const sortedTrend = trendMap.get(f.code) || null
+
+      // ── 补录缺失交易日（_lastPnlDate 到 confirmedDate 之间的缺口）──
+      if (sortedTrend && f._lastPnlDate && date > f._lastPnlDate) {
+        if (_backfillPnl(f, sortedTrend)) recorded = true
+      }
+
+      // ── 记录 confirmedDate 当天 ──
       let prevNAV = (f.prevNav != null && f.prevNav > 0 && f.prevNav !== f.confirmedNav)
         ? f.prevNav
         : null
-      // 兜底：从 pingzhongdata 历史趋势中查找
-      if (prevNAV == null) {
-        try {
-          const pzd = await fetchPingzhongdata(f.code)
-          const trend = pzd.data || pzd
-          if (trend && trend.length >= 2) {
-            const sorted = [...trend].sort((a, b) => a.x - b.x)
-            for (let i = 1; i < sorted.length; i++) {
-              const d = new Date(sorted[i].x + 8 * 3600 * 1000).toISOString().slice(0, 10)
-              if (d === date) { prevNAV = sorted[i - 1].y; break }
-            }
+      // 兜底：从预取的 trend 数据中查找
+      if (prevNAV == null && sortedTrend) {
+        for (let i = 1; i < sortedTrend.length; i++) {
+          if (_tsToDateStr(sortedTrend[i].x) === date) {
+            prevNAV = sortedTrend[i - 1].y
+            break
           }
-        } catch (_) {}
+        }
       }
       if (prevNAV == null) continue
 
@@ -345,12 +385,13 @@ export const useFundStore = defineStore('fund', () => {
       rec.funds.push({ code: f.code, name: f.name || f.code, profit })
       rec.total = parseFloat(rec.funds.reduce((s, x) => s + x.profit, 0).toFixed(2))
 
-      // 更新该基金的最后记录日期
+      // backfill + 当日都完成后才推进 _lastPnlDate
       f._lastPnlDate = date
       recorded = true
     }
 
     if (recorded) {
+      console.log(`[PNL] 保存 pnlHistory, 共 ${Object.keys(pnlHistory.value).length} 天`)
       save()
       savePnl()
     }
@@ -376,6 +417,47 @@ export const useFundStore = defineStore('fund', () => {
   }
 
   // ── Helper functions ──
+
+  /** 东八区时间戳 → YYYY-MM-DD */
+  function _tsToDateStr(x) {
+    return new Date(x + 8 * 3600 * 1000).toISOString().slice(0, 10)
+  }
+
+  /**
+   * 补录缺失交易日的盈亏（从 _lastPnlDate 到 confirmedDate 之间的所有交易日）
+   * @param {Object} f - 基金对象
+   * @param {Array} sortedTrend - 按时间升序排列的净值走势 [{x, y}]
+   * @returns {boolean} 是否有新记录写入
+   */
+  function _backfillPnl(f, sortedTrend) {
+    if (!f._lastPnlDate || !f.confirmedDate || !sortedTrend || sortedTrend.length < 2) return false
+    let filled = false
+    for (let i = 1; i < sortedTrend.length; i++) {
+      const dateStr = _tsToDateStr(sortedTrend[i].x)
+      // 仅补录 (_lastPnlDate, confirmedDate) 开区间内的日期
+      // confirmedDate 本身由后续现有逻辑处理
+      if (dateStr <= f._lastPnlDate) continue
+      if (dateStr >= f.confirmedDate) break
+
+      // 幂等：跳过已有该基金记录的日期
+      const existing = pnlHistory.value[dateStr]
+      if (existing && existing.funds && existing.funds.some(x => x.code === f.code)) continue
+
+      const nav = sortedTrend[i].y
+      const prevNav = sortedTrend[i - 1].y
+      if (!nav || !prevNav || prevNav <= 0) continue
+
+      const profit = parseFloat((f.holdingShares * (nav - prevNav)).toFixed(2))
+
+      if (!pnlHistory.value[dateStr]) pnlHistory.value[dateStr] = { total: 0, funds: [] }
+      const rec = pnlHistory.value[dateStr]
+      rec.funds.push({ code: f.code, name: f.name || f.code, profit })
+      rec.total = parseFloat(rec.funds.reduce((s, x) => s + x.profit, 0).toFixed(2))
+      filled = true
+    }
+    return filled
+  }
+
   function _lockCostBasis(f) {
     if (!f.costBasisLocked && f.confirmedNav) {
       f.costBasis = f.costNav || f.confirmedNav

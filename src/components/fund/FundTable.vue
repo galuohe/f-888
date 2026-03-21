@@ -64,6 +64,13 @@
                     class="fund-tag-add"
                     @click.stop="openTagModal(f)"
                   >+ 标签</span>
+                  <!-- 综合信号徽章 -->
+                  <span
+                    v-if="signalCache[f.code]"
+                    class="signal-badge"
+                    :class="'sig-' + signalCache[f.code].zoneLevel"
+                    :title="'综合评分 ' + signalCache[f.code].composite"
+                  >{{ signalCache[f.code].zone }}</span>
                 </div>
                 <div class="fund-meta">
                   {{ f.code }}
@@ -198,6 +205,7 @@ import { fmt, fmtNum, fmtMD, getTodayStr } from '@/utils/format'
 import TagModal from '@/components/common/TagModal.vue'
 import FundExpandPanel from '@/components/fund/FundExpandPanel.vue'
 import EditFundModal from '@/components/fund/EditFundModal.vue'
+import { signalCache } from '@/utils/signalCache'
 
 
 const props = defineProps({

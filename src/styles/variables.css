@@ -1,18 +1,91 @@
 :root {
+  /* ── 背景色阶 ── */
   --bg-primary:   #0d0f1a;
   --bg-secondary: #141628;
   --bg-card:      #181b2e;
   --bg-input:     #1e2138;
+
+  /* ── 边框 ── */
   --border:       #272b48;
   --border-light: #303560;
+
+  /* ── 文字色阶 ── */
   --text-primary:   #e6e8f4;
   --text-secondary: #8b90b8;
   --text-muted:     #4e527a;
-  --accent:       #5571f5;
-  --accent-glow:  rgba(85, 113, 245, 0.35);
-  --profit:       #f04040;
-  --profit-bg:    rgba(240, 64, 64, 0.10);
-  --loss:         #22c45e;
-  --loss-bg:      rgba(34, 196, 94, 0.10);
-  --neutral:      #8b90b8;
+
+  /* ── 主色 Accent ── */
+  --accent:        #5571f5;
+  --accent-hover:  #6b85ff;
+  --accent-glow:   rgba(85, 113, 245, 0.35);
+  --accent-subtle: rgba(85, 113, 245, 0.12);
+  --accent-border: rgba(85, 113, 245, 0.30);
+  --accent-gradient-end: #8b5cf6; /* 渐变终点色，有意比 --purple 深一档以增加渐变对比 */
+
+  /* ── 涨跌（中国股市惯例：红涨绿跌） ── */
+  --up:          #f04040;
+  --up-bg:       rgba(240, 64, 64, 0.12);
+  --up-border:   rgba(240, 64, 64, 0.30);
+  --down:        #22c45e;
+  --down-bg:     rgba(34, 196, 94, 0.12);
+  --down-border: rgba(34, 196, 94, 0.30);
+  --neutral:     #8b90b8;
+
+  /* 向后兼容别名 */
+  --profit:    var(--up);
+  --profit-bg: var(--up-bg);
+  --loss:      var(--down);
+  --loss-bg:   var(--down-bg);
+
+  /* ── 功能色 ── */
+  --purple:        #a78bfa;
+  --purple-bg:     rgba(167, 139, 250, 0.15);
+  --purple-border: rgba(167, 139, 250, 0.30);
+  --warning:        #f0a500;
+  --warning-bg:     rgba(240, 165, 0, 0.12);
+  --warning-border: rgba(240, 165, 0, 0.35);
+
+  /* ── 排名色 ── */
+  --rank-gold:      #ffc107;
+  --rank-gold-bg:   rgba(255, 193, 7, 0.18);
+  --rank-silver:    #b0bec5;
+  --rank-silver-bg: rgba(176, 190, 197, 0.18);
+  --rank-bronze:      #cd7f32;
+  --rank-bronze-bg:   rgba(205, 127, 50, 0.18);
+
+  /* ── 间距 ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* ── 圆角 ── */
+  --radius-xs:   4px;
+  --radius-sm:   6px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   18px;
+  --radius-pill: 20px;
+  --radius-round: 50%;
+
+  /* ── 字号 ── */
+  --fs-display:    24px;
+  --fs-heading:    18px;
+  --fs-subheading: 15px;
+  --fs-body:       14px;
+  --fs-caption:    13px;
+  --fs-small:      12px;
+  --fs-mini:       11px;
+  --fs-micro:      10px;
+
+  /* ── 阴影 ── */
+  --shadow-sm:    0 2px 8px rgba(0,0,0,0.25);
+  --shadow-md:    0 4px 20px rgba(0,0,0,0.35);
+  --shadow-lg:    0 12px 48px rgba(0,0,0,0.55);
+  --shadow-xl:    0 24px 64px rgba(0,0,0,0.6);
+  --shadow-glow:  0 6px 18px var(--accent-glow);
+  --shadow-focus: 0 0 0 3px var(--accent-glow);
 }

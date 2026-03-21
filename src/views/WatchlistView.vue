@@ -35,6 +35,22 @@
         @click="activeGroup = g.key"
       >{{ g.label }}</button>
       <button class="group-tab group-tab-add" title="新建分组" @click="showNewGroupModal = true">+</button>
+      <!-- 信号筛选 -->
+      <span class="group-tab-divider"></span>
+      <button
+        v-for="sf in signalFilters"
+        :key="sf.key"
+        class="group-tab signal-filter-tab"
+        :class="[sf.cls, { active: signalFilter === sf.key }]"
+        @click="signalFilter = signalFilter === sf.key ? '' : sf.key"
+      >{{ sf.label }}<span v-if="signalFilterCounts[sf.key]" class="sf-count">({{ signalFilterCounts[sf.key] }})</span></button>
+      <!-- 排序模式 -->
+      <span class="group-tab-divider"></span>
+      <button
+        class="group-tab signal-filter-tab sf-sort"
+        :class="{ active: sortMode === 'signal' }"
+        @click="toggleSortMode"
+      >按评分排序</button>
     </div>
 
     <!-- Empty State -->
@@ -46,10 +62,15 @@
       <p>暂无自选基金<br>点击上方「添加自选」开始记录</p>
     </div>
     <div v-else-if="sortedFilteredWatchlist.length === 0" style="padding:24px 0;text-align:center;color:var(--text-muted);font-size:13px;">
-      该分组暂无基金
-      <span v-if="activeGroup !== 'all' && activeGroup !== 'holding'">
-        — <button class="btn-link" @click="showAddToGroupModal = true">添加基金到此分组</button>
-      </span>
+      <template v-if="signalFilter">
+        当前筛选条件下暂无基金 — <button class="btn-link" @click="signalFilter = ''">清除筛选</button>
+      </template>
+      <template v-else>
+        该分组暂无基金
+        <span v-if="activeGroup !== 'all' && activeGroup !== 'holding'">
+          — <button class="btn-link" @click="showAddToGroupModal = true">添加基金到此分组</button>
+        </span>
+      </template>
     </div>
 
     <!-- Table -->
@@ -104,6 +125,13 @@
                       <span class="fund-tag-add" title="管理标签" @click.stop="openTagModal(item)">✎</span>
                     </template>
                     <span v-else class="fund-tag-add" @click.stop="openTagModal(item)">+ 标签</span>
+                    <!-- 综合信号徽章（展开过才有缓存） -->
+                    <span
+                      v-if="signalCache[item.code]"
+                      class="signal-badge"
+                      :class="'sig-' + signalCache[item.code].zoneLevel"
+                      :title="'综合评分 ' + signalCache[item.code].composite"
+                    >{{ signalCache[item.code].zone }}</span>
                   </div>
                   <div class="fund-meta">
                     <span>{{ item.code }}</span>
@@ -289,6 +317,7 @@ import BaseModal from '@/components/common/BaseModal.vue'
 import TagModal from '@/components/common/TagModal.vue'
 import FundExpandPanel from '@/components/fund/FundExpandPanel.vue'
 import AddFundModal from '@/components/fund/AddFundModal.vue'
+import { signalCache } from '@/utils/signalCache'
 
 const fundStore = useFundStore()
 const watchStore = useWatchStore()
@@ -312,6 +341,32 @@ const groupTabs = computed(() => [
   { key: 'holding', label: '已持仓' },
   ...watchStore.groups.map(g => ({ key: g, label: g }))
 ])
+
+// ── 信号筛选 & 排序模式 ──
+const signalFilter = ref('')
+const sortMode = ref('change') // 'change' | 'signal'
+
+const signalFilters = [
+  { key: 'low', label: '机会区', cls: 'sf-low' },
+  { key: 'mid', label: '观望区', cls: 'sf-mid' },
+  { key: 'high', label: '风险区', cls: 'sf-high' },
+]
+
+const signalFilterCounts = computed(() => {
+  const base = activeGroup.value === 'all' ? watchStore.watchlist
+    : activeGroup.value === 'holding' ? watchStore.watchlist.filter(w => isHolding(w.code))
+    : watchStore.watchlist.filter(w => (w.groups || []).includes(activeGroup.value))
+  const counts = { low: 0, mid: 0, high: 0 }
+  for (const w of base) {
+    const sig = signalCache[w.code]
+    if (sig && counts[sig.zoneLevel] !== undefined) counts[sig.zoneLevel]++
+  }
+  return counts
+})
+
+function toggleSortMode() {
+  sortMode.value = sortMode.value === 'change' ? 'signal' : 'change'
+}
 
 // ── 新建分组 Modal ──
 const showNewGroupModal = ref(false)
@@ -405,22 +460,38 @@ const marketBadge = computed(() =>
 )
 
 const filteredWatchlist = computed(() => {
-  if (activeGroup.value === 'all') return watchStore.watchlist
-  if (activeGroup.value === 'holding') return watchStore.watchlist.filter(w => isHolding(w.code))
-  return watchStore.watchlist.filter(w => (w.groups || []).includes(activeGroup.value))
+  let list
+  if (activeGroup.value === 'all') list = watchStore.watchlist
+  else if (activeGroup.value === 'holding') list = watchStore.watchlist.filter(w => isHolding(w.code))
+  else list = watchStore.watchlist.filter(w => (w.groups || []).includes(activeGroup.value))
+  // 信号筛选
+  if (signalFilter.value) {
+    list = list.filter(w => signalCache[w.code]?.zoneLevel === signalFilter.value)
+  }
+  return list
 })
 
 const sortedFilteredWatchlist = computed(() => {
   const list = [...filteredWatchlist.value]
-  list.sort((a, b) => {
-    const va = getDisplayChangeRate(a)
-    const vb = getDisplayChangeRate(b)
-    // 无数据的始终排最后
-    if (va == null && vb == null) return 0
-    if (va == null) return 1
-    if (vb == null) return -1
-    return watchStore.sortDesc ? vb - va : va - vb
-  })
+  if (sortMode.value === 'signal') {
+    list.sort((a, b) => {
+      const sa = signalCache[a.code]?.composite ?? null
+      const sb = signalCache[b.code]?.composite ?? null
+      if (sa == null && sb == null) return 0
+      if (sa == null) return 1
+      if (sb == null) return -1
+      return watchStore.sortDesc ? sb - sa : sa - sb
+    })
+  } else {
+    list.sort((a, b) => {
+      const va = getDisplayChangeRate(a)
+      const vb = getDisplayChangeRate(b)
+      if (va == null && vb == null) return 0
+      if (va == null) return 1
+      if (vb == null) return -1
+      return watchStore.sortDesc ? vb - va : va - vb
+    })
+  }
   return list
 })
 
@@ -547,11 +618,11 @@ async function pickWatchFund(r) {
   transition: all 0.15s;
   white-space: nowrap;
 }
-.group-tab:hover { border-color: #6366f1; color: #a5b4fc; }
+.group-tab:hover { border-color: var(--accent); color: var(--accent-hover); }
 .group-tab.active {
-  background: rgba(99, 102, 241, 0.2);
-  border-color: #6366f1;
-  color: #a5b4fc;
+  background: rgba(85, 113, 245, 0.2);
+  border-color: var(--accent);
+  color: var(--accent-hover);
   font-weight: 500;
 }
 .group-tab-add {
@@ -567,8 +638,8 @@ async function pickWatchFund(r) {
   font-size: 10px;
   padding: 1px 5px;
   border-radius: 4px;
-  background: rgba(99, 102, 241, 0.2);
-  color: #a5b4fc;
+  background: rgba(85, 113, 245, 0.2);
+  color: var(--accent-hover);
   margin-left: 4px;
   vertical-align: middle;
   flex-shrink: 0;
@@ -595,8 +666,8 @@ async function pickWatchFund(r) {
   display: flex;
   align-items: center;
 }
-.btn-group-assign:hover { border-color: #6366f1; color: #a5b4fc; }
-.btn-group-assign.has-groups { border-color: rgba(99,102,241,0.5); color: #a5b4fc; background: rgba(99,102,241,0.1); }
+.btn-group-assign:hover { border-color: var(--accent); color: var(--accent-hover); }
+.btn-group-assign.has-groups { border-color: var(--accent-glow); color: var(--accent-hover); background: var(--accent-subtle); }
 .group-count-dot {
   font-size: 10px;
   margin-left: 2px;
@@ -609,20 +680,20 @@ async function pickWatchFund(r) {
   padding: 3px 8px;
   font-size: 11px;
   border-radius: 5px;
-  border: 1px solid rgba(99,102,241,0.4);
-  background: rgba(99,102,241,0.1);
-  color: #a5b4fc;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-subtle);
+  color: var(--accent-hover);
   cursor: pointer;
   transition: all 0.15s;
 }
-.btn-build:hover:not(:disabled) { background: rgba(99,102,241,0.25); }
+.btn-build:hover:not(:disabled) { background: rgba(85, 113, 245, 0.25); }
 .btn-build:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* 链接按钮 */
 .btn-link {
   background: none;
   border: none;
-  color: #a5b4fc;
+  color: var(--accent-hover);
   cursor: pointer;
   font-size: 13px;
   padding: 0;
@@ -654,8 +725,8 @@ async function pickWatchFund(r) {
   font-size: 13px;
   transition: background 0.12s;
 }
-.group-select-item:hover { background: rgba(99,102,241,0.1); }
-.group-select-item input[type="checkbox"] { width: 16px; height: 16px; accent-color: #6366f1; flex-shrink: 0; }
+.group-select-item:hover { background: var(--accent-subtle); }
+.group-select-item input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); flex-shrink: 0; }
 .group-select-label { flex: 1; color: var(--text-primary); }
 .group-del-btn {
   background: none; border: none;
@@ -700,14 +771,37 @@ async function pickWatchFund(r) {
   border-bottom: 1px solid var(--border); transition: background 0.12s;
 }
 .result-item:last-child { border-bottom: none; }
-.result-item:hover { background: rgba(99, 102, 241, 0.12); }
+.result-item:hover { background: var(--accent-subtle); }
 .result-code { font-size: 12px; color: var(--text-muted); min-width: 52px; font-family: monospace; }
 .result-name { font-size: 13px; color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 信号筛选 tab */
+.group-tab-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  align-self: center;
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+.signal-filter-tab { font-size: 11px; padding: 3px 10px; }
+.signal-filter-tab.sf-low { color: var(--up); border-color: var(--up-border); }
+.signal-filter-tab.sf-low.active { background: var(--up-bg); border-color: var(--up); font-weight: 600; }
+.signal-filter-tab.sf-mid { color: var(--text-muted); }
+.signal-filter-tab.sf-mid.active { background: rgba(139,144,184,0.15); font-weight: 600; }
+.signal-filter-tab.sf-high { color: var(--down); border-color: var(--down-border); }
+.signal-filter-tab.sf-high.active { background: var(--down-bg); border-color: var(--down); font-weight: 600; }
+.sf-count { font-size: 10px; margin-left: 2px; opacity: 0.75; }
+
+/* 排序模式 chip */
+.sf-sort { color: var(--accent) !important; border-color: var(--accent-border) !important; }
+.sf-sort.active { background: rgba(85, 113, 245, 0.2) !important; border-color: var(--accent) !important; font-weight: 600; }
 
 /* ── Mobile: 768px ── */
 @media (max-width: 768px) {
   .group-tabs { gap: 4px; padding: 6px 0; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .group-tabs::-webkit-scrollbar { display: none; }
   .group-tab { padding: 3px 10px; font-size: 11px; flex-shrink: 0; }
+  .group-tab-divider { margin: 0 2px; }
 }
 </style>

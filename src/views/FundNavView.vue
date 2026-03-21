@@ -40,6 +40,10 @@
               日增长率
               <span class="sort-arrow" v-if="sortBy === 'rzdf'">{{ order === 'desc' ? '▼' : '▲' }}</span>
             </th>
+            <th class="col-pct col-sortable" :class="{ 'col-active': sortBy === 'composite' }" @click="toggleCompositeSort">
+              综合评分
+              <span class="sort-arrow" v-if="sortBy === 'composite'">{{ order === 'desc' ? '▼' : '▲' }}</span>
+            </th>
             <th class="col-status">申购状态</th>
             <th class="col-status">赎回状态</th>
             <th class="col-fee">手续费</th>
@@ -62,14 +66,21 @@
             <th></th>
             <th></th>
             <th></th>
+            <th></th>
           </tr>
         </thead>
-        <tbody v-if="!loading && list.length > 0">
-          <tr v-for="(f, i) in list" :key="f.code">
+        <tbody v-if="!loading && displayList.length > 0">
+          <tr v-for="(f, i) in displayList" :key="f.code">
             <td class="col-idx">{{ (page - 1) * size + i + 1 }}</td>
             <td class="col-code">{{ f.code }}</td>
             <td class="col-name">
               <span class="fund-name">{{ f.name }}</span>
+              <span
+                v-if="signalCache[f.code]"
+                class="signal-badge"
+                :class="'sig-' + signalCache[f.code].zoneLevel"
+                :title="'综合评分 ' + signalCache[f.code].composite"
+              >{{ signalCache[f.code].zone }}</span>
             </td>
             <td class="col-nav">
               <div class="nav-val">{{ f.dwjz || '--' }}</div>
@@ -89,6 +100,7 @@
             </td>
             <td class="col-num" :class="growClass(f.dailyGrow)">{{ fmtGrow(f.dailyGrow) }}</td>
             <td class="col-pct" :class="growClass(f.dailyRate)">{{ fmtRate(f.dailyRate) }}</td>
+            <td class="col-pct" :class="compositeClass(f.code)">{{ compositeText(f.code) }}</td>
             <td class="col-status">{{ f.buyStatus || '--' }}</td>
             <td class="col-status">{{ f.sellStatus || '--' }}</td>
             <td class="col-fee">{{ f.fee ? f.fee + '%' : '--' }}</td>
@@ -105,7 +117,7 @@
       <SuggestModal :modal="suggestModal" />
 
       <div class="fn-loading" v-if="loading">加载中…</div>
-      <div class="fn-empty" v-else-if="list.length === 0 && !error">暂无数据</div>
+      <div class="fn-empty" v-else-if="displayList.length === 0 && !error">暂无数据</div>
       <div class="fn-error" v-if="error">{{ error }} <button class="fn-retry" @click="reload()">重试</button></div>
     </div>
 
@@ -138,6 +150,8 @@ import { ref, computed, watch } from 'vue'
 import { fetchFundNav, NAV_FUND_TYPES } from '@/services/fundNav'
 import { useFundActions } from '@/composables/useFundActions'
 import SuggestModal from '@/components/common/SuggestModal.vue'
+import { fetchPingzhongdata } from '@/services/pingzhongdata'
+import { signalCache, calcTechIndicators, calcBandSignal, calcCompositeSignal } from '@/utils/signalCache'
 
 const props = defineProps({
   active: { type: Boolean, default: false }
@@ -183,6 +197,41 @@ function toggleSort(key) {
   reload()
 }
 
+function toggleCompositeSort() {
+  if (sortBy.value === 'composite') {
+    order.value = order.value === 'desc' ? 'asc' : 'desc'
+  } else {
+    sortBy.value = 'composite'
+    order.value = 'desc'
+  }
+}
+
+const displayList = computed(() => {
+  if (sortBy.value !== 'composite') return list.value
+  const sorted = [...list.value]
+  sorted.sort((a, b) => {
+    const sa = signalCache[a.code]?.composite ?? null
+    const sb = signalCache[b.code]?.composite ?? null
+    if (sa == null && sb == null) return 0
+    if (sa == null) return 1
+    if (sb == null) return -1
+    return order.value === 'desc' ? sb - sa : sa - sb
+  })
+  return sorted
+})
+
+function compositeText(code) {
+  const sig = signalCache[code]
+  if (!sig) return '--'
+  return (sig.composite > 0 ? '+' : '') + sig.composite
+}
+
+function compositeClass(code) {
+  const sig = signalCache[code]
+  if (!sig) return ''
+  return sig.composite > 0 ? 'pct-up' : sig.composite < 0 ? 'pct-down' : ''
+}
+
 function goPage(p) {
   const n = Math.max(1, Math.min(p || 1, pages.value))
   if (n === page.value) return
@@ -208,10 +257,30 @@ async function reload() {
     pages.value = res.pages
     jumpPage.value = page.value
     if (res.showday && res.showday.length > 0) showday.value = res.showday
+    // 异步批量计算综合信号
+    _calcListSignals(res.list)
   } catch (e) {
     error.value = '加载失败: ' + e.message
   } finally {
     loading.value = false
+  }
+}
+
+async function _calcListSignals(funds) {
+  for (const f of funds) {
+    if (signalCache[f.code]) continue
+    try {
+      const pzd = await fetchPingzhongdata(f.code)
+      const trend = pzd.data || pzd
+      if (!trend || trend.length < 20) continue
+      const fullTrend = trend.map(d => [d.x, d.y])
+      const tech = calcTechIndicators(fullTrend)
+      const band = calcBandSignal(fullTrend)
+      const result = calcCompositeSignal(tech, band, null)
+      if (result) {
+        signalCache[f.code] = { zone: result.zone, zoneLevel: result.zoneLevel, confidence: result.confidence, composite: result.composite }
+      }
+    } catch (_) {}
   }
 }
 
@@ -504,7 +573,7 @@ function growClass(val) {
   cursor: pointer;
   border: 1px solid var(--accent);
 }
-.act-add:hover { background: rgba(99, 102, 241, 0.12); }
+.act-add:hover { background: var(--accent-subtle); }
 .suggest-btn {
   cursor: pointer;
   font-size: 10px !important;

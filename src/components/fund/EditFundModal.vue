@@ -229,8 +229,8 @@ async function confirm() {
   transition: all 0.15s;
 }
 .mode-tab.active {
-  background: rgba(99, 102, 241, 0.2);
-  border-color: #6366f1;
+  background: rgba(85, 113, 245, 0.2);
+  border-color: var(--accent);
   color: #a5b4fc;
   font-weight: 500;
 }

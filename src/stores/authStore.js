@@ -1,8 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { supabase } from '@/services/supabase'
-import { KEYS } from '@/utils/storage'
-import { saveWatchGroups } from '@/utils/storage'
+import { KEYS, saveWatchGroups, savePnlHistory } from '@/utils/storage'
 
 export const useAuthStore = defineStore('auth', () => {
   const client = ref(supabase)
@@ -72,7 +71,7 @@ export const useAuthStore = defineStore('auth', () => {
         // 新账户：清空本地
         localStorage.setItem(KEYS.FUNDS, '[]')
         localStorage.setItem(KEYS.WATCHLIST, '[]')
-        localStorage.setItem(KEYS.PNL_HISTORY, '{}')
+        savePnlHistory({})
         _cache = { funds: [], watchlist: [], pnl_history: {} }
         isLoaded.value = true
         isSyncing.value = false
@@ -144,7 +143,7 @@ export const useAuthStore = defineStore('auth', () => {
         saveWatchGroups(data.watch_groups)
       }
       if (data.pnl_history) {
-        localStorage.setItem(KEYS.PNL_HISTORY, JSON.stringify(data.pnl_history))
+        savePnlHistory(data.pnl_history)
       }
 
       isLoaded.value = true

@@ -144,6 +144,43 @@
       </div>
     </div>
 
+    <!-- ═══ 综合建议 ═══ -->
+    <div v-if="compositeSignal" class="fd-composite">
+      <div class="fd-tech-header">
+        <span class="fd-tech-icon">🎯</span>
+        <span class="fd-tech-title">综合建议</span>
+        <span class="fd-composite-confidence" :class="'conf-' + compositeSignal.confidence">
+          {{ compositeSignal.confidence === 'high' ? '高置信' : compositeSignal.confidence === 'medium' ? '中置信' : '有分歧' }}
+        </span>
+      </div>
+
+      <!-- 各指标评分一览 -->
+      <div class="fd-composite-scores">
+        <div v-for="s in compositeSignal.scores" :key="s.name" class="fd-composite-score-item">
+          <span class="fd-composite-score-name">{{ s.icon }} {{ s.name }}</span>
+          <span class="fd-composite-score-bar">
+            <span class="fd-composite-dot"
+              :class="s.score > 0 ? 'dot-up' : s.score < 0 ? 'dot-down' : 'dot-mid'"
+              :style="{ left: ((s.score + 2) / 4 * 100) + '%' }">
+            </span>
+          </span>
+          <span class="fd-composite-score-val"
+            :class="s.score > 0 ? 'profit' : s.score < 0 ? 'loss' : ''">
+            {{ s.score > 0 ? '+' + s.score : s.score }}
+          </span>
+        </div>
+      </div>
+
+      <!-- 综合结论 -->
+      <div class="fd-band-signal" :class="'zone-' + compositeSignal.zoneLevel">
+        <div class="fd-band-signal-header">
+          <span class="fd-band-zone-tag">{{ compositeSignal.zone }}</span>
+          <span class="fd-band-zone-hint">综合评分 {{ compositeSignal.composite > 0 ? '+' : '' }}{{ compositeSignal.composite }}</span>
+        </div>
+        <div class="fd-band-advice">{{ compositeSignal.advice }}</div>
+      </div>
+    </div>
+
     <!-- ═══ 技术参考 ═══ -->
     <div v-if="techIndicators" class="fd-tech">
       <div class="fd-tech-header">
@@ -406,6 +443,7 @@ import { fetchPingzhongdata } from '@/services/pingzhongdata'
 import { fetchIntraday, fetchHoldings, fetchStockChanges } from '@/services/fundApi'
 import { fmt, fmtMD, getTodayStr } from '@/utils/format'
 import BaseModal from '@/components/common/BaseModal.vue'
+import { signalCache, calcCompositeSignal } from '@/utils/signalCache'
 
 const props = defineProps({
   code: { type: String, required: true },
@@ -1112,17 +1150,18 @@ function renderTrendChart() {
     if (!maxDd || peakIdx >= troughIdx) {
       series.push({ type: 'line', symbol: 'none', smooth: false, data: yVals, lineStyle: { width: 1.5, color: RED }, areaStyle: mkArea(RED) })
     } else if (recoveryIdx > 0) {
+      const yellowEnd = Math.max(troughIdx, recoveryIdx - 1)
       series.push(mkSeries(yVals, 0, peakIdx, RED, true))
       series.push(mkSeries(yVals, peakIdx, troughIdx, GREEN, true))
-      series.push(mkSeries(yVals, troughIdx, recoveryIdx, YELLOW, false))
-      if (recoveryIdx < yVals.length - 1) series.push(mkSeries(yVals, recoveryIdx, yVals.length - 1, RED, true))
+      series.push(mkSeries(yVals, troughIdx, yellowEnd, YELLOW, false))
+      if (yellowEnd < yVals.length - 1) series.push(mkSeries(yVals, yellowEnd, yVals.length - 1, RED, true))
     } else {
       series.push(mkSeries(yVals, 0, peakIdx, RED, true))
       series.push(mkSeries(yVals, peakIdx, troughIdx, GREEN, true))
       series.push(mkSeries(yVals, troughIdx, yVals.length - 1, YELLOW, false))
     }
 
-    // 修复区域背景标注
+    // 修复区域背景标注（从 trough 到 recovery，仅覆盖修复阶段）
     if (maxDd > 0 && peakIdx < troughIdx) {
       const recoveryEndIdx = recoveryIdx > 0 ? recoveryIdx : yVals.length - 1
       const recoveryDays = recoveryIdx > 0 ? recoveryIdx - troughIdx : null
@@ -1132,9 +1171,9 @@ function renderTrendChart() {
       yellowSeries.markArea = {
         silent: true,
         data: [[
-          { xAxis: xCats[troughIdx], itemStyle: { color: 'rgba(245, 166, 35, 0.10)' },
+          { xAxis: troughIdx, itemStyle: { color: 'rgba(245, 166, 35, 0.10)' },
             label: { show: true, position: 'insideTop', formatter: labelText, color: labelColor, fontSize: 10, fontWeight: 600, padding: [4, 0, 0, 0] } },
-          { xAxis: xCats[recoveryEndIdx] }
+          { xAxis: recoveryEndIdx }
         ]]
       }
     }
@@ -1561,6 +1600,18 @@ const suggestInfo = computed(() => {
   }
 })
 
+// ── 综合建议（三指标融合，复用 signalCache 纯函数）──
+const compositeSignal = computed(() => {
+  return calcCompositeSignal(techIndicators.value, bandSignal.value, suggestInfo.value)
+})
+
+// 将综合信号写入全局缓存，供列表行展示徽章
+watch(compositeSignal, (val) => {
+  if (val) {
+    signalCache[props.code] = { zone: val.zone, zoneLevel: val.zoneLevel, confidence: val.confidence, composite: val.composite }
+  }
+})
+
 function buildSuggestLogicHtml({ rTotal, rToday, fmtP }) {
   const tick = (ok) => ok
     ? '<span style="color:var(--profit);font-weight:700;">✅</span>'
@@ -1718,7 +1769,7 @@ function buildSuggestLogicHtml({ rTotal, rToday, fmtP }) {
   transition: background 0.2s;
 }
 .fd-toggle-switch.on {
-  background: #6366f1;
+  background: var(--accent);
 }
 .fd-toggle-knob {
   width: 12px;
@@ -1792,7 +1843,7 @@ function buildSuggestLogicHtml({ rTotal, rToday, fmtP }) {
 .fd-period-btn:hover { color: var(--text-primary); background: rgba(255,255,255,0.06); }
 .fd-period-btn.active {
   color: var(--accent);
-  background: rgba(99, 102, 241, 0.15);
+  background: var(--accent-subtle);
   font-weight: 600;
 }
 
@@ -1853,7 +1904,7 @@ function buildSuggestLogicHtml({ rTotal, rToday, fmtP }) {
   content: '';
   position: absolute;
   top: 0; bottom: 0; left: 0; right: 0;
-  border-left: 1.5px dashed #6366f1;
+  border-left: 1.5px dashed var(--accent);
   pointer-events: none;
   margin-left: -0.5px;
 }
@@ -1862,13 +1913,13 @@ function buildSuggestLogicHtml({ rTotal, rToday, fmtP }) {
   width: 22px;
   height: 22px;
   border-radius: 4px;
-  background: var(--accent, #6366f1);
+  background: var(--accent, var(--accent));
   color: #fff;
   font-size: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.5);
+  box-shadow: 0 2px 8px var(--accent-glow);
   cursor: ew-resize;
   user-select: none;
   z-index: 11;
@@ -1881,7 +1932,7 @@ function buildSuggestLogicHtml({ rTotal, rToday, fmtP }) {
   top: -18px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--accent, #6366f1);
+  background: var(--accent, var(--accent));
   color: #fff;
   font-size: 10px;
   padding: 1px 5px;
@@ -1934,6 +1985,79 @@ function buildSuggestLogicHtml({ rTotal, rToday, fmtP }) {
 .fd-hi-chg { flex: 3; text-align: right; font-size: 12px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
 .fd-hi-chg.profit { color: var(--profit); }
 .fd-hi-chg.loss { color: var(--loss); }
+
+/* ══════ 综合建议 ══════ */
+.fd-composite {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.fd-composite-confidence {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.fd-composite-confidence.conf-high {
+  background: var(--up-bg);
+  color: var(--up);
+  border: 1px solid var(--up-border);
+}
+.fd-composite-confidence.conf-medium {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid var(--warning-border);
+}
+.fd-composite-confidence.conf-low {
+  background: var(--down-bg);
+  color: var(--down);
+  border: 1px solid var(--down-border);
+}
+.fd-composite-scores {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  margin: 6px 0;
+  background: rgba(255,255,255,0.02);
+  border-radius: 8px;
+}
+.fd-composite-score-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.fd-composite-score-name {
+  width: 80px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.fd-composite-score-bar {
+  flex: 1;
+  height: 4px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 2px;
+  position: relative;
+}
+.fd-composite-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  top: -2px;
+  transform: translateX(-50%);
+}
+.fd-composite-dot.dot-up { background: var(--up); box-shadow: 0 0 4px var(--up-bg); }
+.fd-composite-dot.dot-down { background: var(--down); box-shadow: 0 0 4px var(--down-bg); }
+.fd-composite-dot.dot-mid { background: var(--text-muted); }
+.fd-composite-score-val {
+  width: 24px;
+  text-align: right;
+  font-weight: 700;
+  font-size: 12px;
+}
 
 /* ══════ 技术参考 ══════ */
 .fd-tech {

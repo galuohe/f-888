@@ -95,7 +95,15 @@
                 <td class="sticky-col"
                   @mouseenter="showTip($event, f.SHORTNAME)"
                   @mouseleave="hideTip">
-                  <div class="fund-name">{{ truncName(f.SHORTNAME) }}</div>
+                  <div class="fund-name">
+                    {{ truncName(f.SHORTNAME) }}
+                    <span
+                      v-if="signalCache[f.FCODE]"
+                      class="signal-badge"
+                      :class="'sig-' + signalCache[f.FCODE].zoneLevel"
+                      :title="'综合评分 ' + signalCache[f.FCODE].composite"
+                    >{{ signalCache[f.FCODE].zone }}</span>
+                  </div>
                   <div class="fund-code">{{ f.FCODE }}</div>
                 </td>
                 <td>{{ f.DWJZ }}</td>
@@ -160,6 +168,8 @@ import { useFundStore } from '@/stores/fundStore'
 import { useWatchStore } from '@/stores/watchStore'
 import { useFundActions } from '@/composables/useFundActions'
 import SuggestModal from '@/components/common/SuggestModal.vue'
+import { fetchPingzhongdata } from '@/services/pingzhongdata'
+import { signalCache, calcTechIndicators, calcBandSignal, calcCompositeSignal } from '@/utils/signalCache'
 
 const props = defineProps({ active: Boolean })
 
@@ -314,11 +324,32 @@ function toggleExpand(code) {
     }
     if (fundsResp && Array.isArray(fundsResp.Data)) {
       relFunds.value = fundsResp.Data
+      // 展开后批量计算关联基金的综合信号
+      _calcRelFundsSignals(fundsResp.Data)
     }
     detailLoading.value = false
   }).catch(() => {
     if (expandedCode.value === code) detailLoading.value = false
   })
+}
+
+/* ---------- 批量计算关联基金综合信号 ---------- */
+async function _calcRelFundsSignals(funds) {
+  for (const f of funds) {
+    if (signalCache[f.FCODE]) continue
+    try {
+      const pzd = await fetchPingzhongdata(f.FCODE)
+      const trend = pzd.data || pzd
+      if (!trend || trend.length < 20) continue
+      const fullTrend = trend.map(d => [d.x, d.y])
+      const tech = calcTechIndicators(fullTrend)
+      const band = calcBandSignal(fullTrend)
+      const result = calcCompositeSignal(tech, band, null)
+      if (result) {
+        signalCache[f.FCODE] = { zone: result.zone, zoneLevel: result.zoneLevel, confidence: result.confidence, composite: result.composite }
+      }
+    } catch (_) {}
+  }
 }
 
 /* ---------- 格式化工具 ---------- */
@@ -477,7 +508,7 @@ watch(() => props.active, (v) => {
 .zt-chip.active {
   color: var(--accent);
   border-color: var(--accent);
-  background: rgba(99, 102, 241, 0.12);
+  background: var(--accent-subtle);
   font-weight: 600;
 }
 .zt-toolbar {
@@ -671,7 +702,7 @@ watch(() => props.active, (v) => {
   border: 1px solid var(--accent);
 }
 .zt-action.add:hover {
-  background: rgba(99, 102, 241, 0.12);
+  background: var(--accent-subtle);
 }
 .suggest-btn {
   cursor: pointer;
@@ -728,7 +759,7 @@ watch(() => props.active, (v) => {
   color: #eee;
   font-size: 12px;
   font-weight: 500;
-  border: 1px solid rgba(99, 102, 241, 0.4);
+  border: 1px solid var(--accent-border);
   border-radius: 6px;
   white-space: nowrap;
   z-index: 9999;

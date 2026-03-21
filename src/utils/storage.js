@@ -7,7 +7,8 @@ export const KEYS = {
   FUNDS: 'fund_calc_v6',
   WATCHLIST: 'fund_watchlist_v1',
   WATCH_GROUPS: 'fund_watch_groups_v1',
-  PNL_HISTORY: 'fund_pnl_history_v1',
+  PNL_HISTORY: 'fund_pnl_history_v1',  // 旧版单体 key，仅用于迁移检测
+  PNL_MONTH_PREFIX: 'fund_pnl_',       // 新版按月分片 key 前缀
   HIDDEN_COLS: 'fund_hidden_cols',
   AI_KEY: 'deepseek_api_key',
   AI_HISTORY: 'ai_chat_history',
@@ -118,18 +119,73 @@ export function saveWatchGroups(groups) {
   localStorage.setItem(KEYS.WATCH_GROUPS, JSON.stringify(groups))
 }
 
-/** 读取盈亏历史 */
+/** 读取盈亏历史（按月分片存储，自动迁移旧格式） */
 export function loadPnlHistory() {
   try {
-    return JSON.parse(localStorage.getItem(KEYS.PNL_HISTORY) || '{}')
+    // 迁移：检测旧版单体 key，拆分为月度 key 后删除
+    const legacy = localStorage.getItem(KEYS.PNL_HISTORY)
+    if (legacy) {
+      const old = JSON.parse(legacy)
+      if (Object.keys(old).length > 0) {
+        savePnlHistory(old)
+      }
+      localStorage.removeItem(KEYS.PNL_HISTORY)
+      return old
+    }
+
+    // 正常加载：收集所有月度 key 并合并
+    const merged = {}
+    const prefix = KEYS.PNL_MONTH_PREFIX
+    const keys = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith(prefix) && !k.startsWith(prefix + 'history')) {
+        keys.push(k)
+      }
+    }
+    for (const k of keys) {
+      try {
+        Object.assign(merged, JSON.parse(localStorage.getItem(k)))
+      } catch (_) {}
+    }
+    return merged
   } catch (_) {
     return {}
   }
 }
 
-/** 保存盈亏历史 */
+/** 保存盈亏历史（按月分片，仅写入变更的月份） */
 export function savePnlHistory(history) {
-  localStorage.setItem(KEYS.PNL_HISTORY, JSON.stringify(history))
+  const prefix = KEYS.PNL_MONTH_PREFIX
+
+  // 按 YYYY_MM 分组
+  const byMonth = {}
+  for (const date in history) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
+    const monthKey = date.slice(0, 4) + '_' + date.slice(5, 7)
+    if (!byMonth[monthKey]) byMonth[monthKey] = {}
+    byMonth[monthKey][date] = history[date]
+  }
+
+  // 写入变更的月份
+  for (const monthKey in byMonth) {
+    const lsKey = prefix + monthKey
+    const newJson = JSON.stringify(byMonth[monthKey])
+    if (localStorage.getItem(lsKey) !== newJson) {
+      localStorage.setItem(lsKey, newJson)
+    }
+  }
+
+  // 删除 history 中已不存在的月份 key（支持 clear / removeFund 清理）
+  const keysToRemove = []
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i)
+    if (k && k.startsWith(prefix) && !k.startsWith(prefix + 'history')) {
+      const monthKey = k.slice(prefix.length)
+      if (!byMonth[monthKey]) keysToRemove.push(k)
+    }
+  }
+  keysToRemove.forEach(k => localStorage.removeItem(k))
 }
 
 /** 读取隐藏列配置 */
